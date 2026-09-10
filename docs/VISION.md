@@ -38,7 +38,7 @@ no multi-user features.
 - **Functional first.** Every phase ships something that runs, even if rough.
 - **Judgement stays with the user.** No automated "match score" is required for
   the core workflow; the user decides what looks close enough.
-- **Static and free.** Runs as a static site on GitLab Pages. No backend, no
+- **Static and free.** Runs as a static site on GitHub Pages. No backend, no
   database, no paid services, minimal dependencies.
 - **One language.** TypeScript everywhere; English for all code and docs.
 - **Real scale by default.** Metres are metres. A 2 km straight on the circuit is

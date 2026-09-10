@@ -9,7 +9,7 @@ look-alike loop, and save the attempt. See [docs/VISION.md](docs/VISION.md) and
 
 See [CONVENTIONS.md](CONVENTIONS.md). In short: TypeScript only, English only,
 automated tests always (Vitest, fast and offline), functional first, static site
-deployable to GitLab Pages with no backend.
+deployable to GitHub Pages with no backend.
 
 ## Run
 
@@ -30,8 +30,8 @@ npm run build      # type-check (tsc --noEmit) + production build to dist/
 - `src/` — application code and colocated `*.test.ts` files.
 - `src/data/` — bundled data (`circuits.json`).
 - `docs/` — `VISION.md`, `ROADMAP.md`, and `specs/` (one spec per phase).
-- `.gitlab-ci.yml` — test + GitLab Pages deploy; inert until the repo is pushed
-  to GitLab.
+- `.github/workflows/deploy.yml` — runs tests + build on every push/PR, and
+  deploys `dist/` to GitHub Pages from `main`.
 
 ## Working method
 

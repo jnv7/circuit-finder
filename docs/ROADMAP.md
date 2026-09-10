@@ -20,7 +20,9 @@ Spec: [specs/phase-0-skeleton.md](specs/phase-0-skeleton.md).
 
 - Repo layout, `CONVENTIONS.md`, `CLAUDE.md`.
 - Vite + TypeScript + Vitest set up, 9 passing tests.
-- `.gitlab-ci.yml`: test job + GitLab Pages deploy job.
+- CI: test + build on push, deploy to Pages from `main` (originally
+  `.gitlab-ci.yml`; moved to GitHub Actions on 2026-09-10 — see the decision
+  log).
 - Minimal page that loads `circuits.json` and lists the circuits.
 
 ### Phase 1 — Circuit data + geometry toolkit — `done`
@@ -90,6 +92,14 @@ Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
 
 Newest first. Each entry dated.
 
+- **2026-09-10 — Deploy target: GitHub Pages.** The repo lives on GitHub
+  (`github.com/jnv7/circuit-finder`), never GitLab. Replaced `.gitlab-ci.yml`
+  with `.github/workflows/deploy.yml` (test + build on every push/PR;
+  `upload-pages-artifact` + `deploy-pages` from `main`). Vite `base`
+  (`/circuit-finder/`) already matched a project-page path, so no build change.
+  Supersedes the 2026-09-08 "must deploy to GitLab Pages" note; everything else
+  in that entry (static, no backend, `localStorage` + JSON) still holds. Needs a
+  one-time repo setting: *Pages → Source: GitHub Actions*.
 - **2026-09-10 — Phase 2 shipped.** First interactive release: a Leaflet map
   fixed on Porto (OSM raster tiles, no key), a chosen circuit's centreline
   overlaid at true 1:1, drag-anywhere to move and a single handle to rotate,

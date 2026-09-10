@@ -28,7 +28,7 @@ product goal and [docs/ROADMAP.md](docs/ROADMAP.md) for phases and priorities.
 ## Stack constraints
 
 - Static site only: **TypeScript + Vite**, built to static files.
-- Deployable to **GitLab Pages** with no backend, no database, no paid services.
+- Deployable to **GitHub Pages** with no backend, no database, no paid services.
 - Persistence is `localStorage` plus JSON file export/import.
 - Keep dependencies minimal and free of API keys or subscriptions.
 

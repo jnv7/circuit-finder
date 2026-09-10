@@ -20,6 +20,14 @@ npm run test       # watch tests
 npm run build      # type-check + production build
 ```
 
+## Deployment
+
+Pushes to `main` run tests + build and publish `dist/` to **GitHub Pages**
+(`.github/workflows/deploy.yml`), served at
+`https://<user>.github.io/circuit-finder/`. The Vite `base` is
+`/circuit-finder/`. Enable it once under *Settings → Pages → Build and
+deployment → Source: GitHub Actions*.
+
 ## Docs
 
 - [Release notes](RELEASES.md) — what each release lets you do.
