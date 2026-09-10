@@ -6,12 +6,11 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 5 — Trace & study.** Spec:
-[specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
-Not started. Trace a route by free clicking along the streets under the overlay;
-show its real length and a plain metres-based deviation from the circuit shape
-(no match %); a UI-stripping "study view" for screenshots. The route is saved
-with the placement (`SavedPlacement` → v2). Snap-to-street stays Phase 6+.
+**Phase 6+ triage.** The manual acetate workflow is complete end to end
+(place → judge → keep → trace & study). Next is to pick the first Phase 6+ item
+to spec — the strongest candidates are freeing the map (any location + place
+search, which also needs street data beyond the Porto box) and snap-to-street
+for the traced route. See the Phase 6+ list below.
 
 ## Phases
 
@@ -79,7 +78,7 @@ Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.m
   it; delete it. Save over an existing entry asks first.
 - No attempt list, names, notes, examples, or file export/import (all Phase 6+).
 
-### Phase 5 — Trace & study — `todo`
+### Phase 5 — Trace & study — `done`
 
 Spec: [specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
 
@@ -116,6 +115,25 @@ Spec: [specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-10 — Phase 5 shipped.** Trace & study. A **Trace route** toggle puts
+  the map into trace mode (the overlay locks, the handle hides); each map click
+  appends a `[lon, lat]` vertex to `AppState.route`; **Undo point** / **Clear
+  route** edit it. The panel shows the traced route's real length against the
+  circuit length at the current scale (with the signed %) and a symmetric
+  mean/max **deviation in metres** (`app/trace.ts`: `resample` both lines at
+  `DEV_SAMPLE_M = 10` m, nearest-distance each way, Hausdorff-style max) — no
+  match %. **Study view** strips the panel to that summary and hides the handle,
+  circuit overlay, drag target and street layer, leaving map + route (browser
+  print works; a print stylesheet / PNG export are Phase 6+). Persistence:
+  `SavedPlacement` gained an optional `route` and `PLACEMENTS_SCHEMA_VERSION`
+  went to `2`; `validatePlacement` accepts stored v1 records and upgrades them
+  in memory (no route). Save / Revert / auto-restore / Delete and
+  `hasUnsavedChanges` all carry the route. New pure `src/app/trace.ts`, plus a
+  `route` field and reducers in `src/app/state.ts`
+  (`addRoutePoint`/`undoRoutePoint`/`clearRoute`; `selectCircuit` clears it,
+  `loadPlacement` restores it). No new data file, no new dependency. 171 tests
+  pass.
 
 - **2026-09-10 — Phase 5 spec written.** Trace & study. Decisions locked:
   tracing is **free clicking** (straight segments between clicked vertices, no

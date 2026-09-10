@@ -3,6 +3,7 @@
 // builder (testable with no DOM); `bind` wires the events on a rendered root.
 import type { MetricCircuit } from '../circuits'
 import type { SavedPlacement } from '../placements'
+import type { RouteStats } from '../app/trace'
 import { formatDistance, readout } from '../app/overlay'
 import { proximityColor } from '../app/proximity'
 import { MAX_SCALE, MIN_SCALE } from '../app/state'
@@ -18,6 +19,16 @@ export type ControlsView = {
   hasUnsavedChanges: boolean
   /** The "Preview saved" toggle is on. */
   previewingSaved: boolean
+  /** Trace mode is active — map clicks add route vertices. */
+  tracing: boolean
+  /** Study view is active — the panel is stripped to the route summary. */
+  studyView: boolean
+  /** Number of vertices in the current route. */
+  routePointCount: number
+  /** Stats for the current route, or `null` when there is nothing to measure. */
+  routeStats: RouteStats | null
+  /** Circuit lap length at the current scale, for the route-vs-circuit line. */
+  circuitLengthM: number
   /** Reference time for the "Saved …" relative label. Defaults to now. */
   now?: Date
 }
@@ -30,12 +41,31 @@ export type ControlsHandlers = {
   onRevertToSaved(): void
   onDeleteSaved(): void
   onTogglePreviewSaved(show: boolean): void
+  onToggleTrace(): void
+  onUndoRoutePoint(): void
+  onClearRoute(): void
+  onToggleStudyView(): void
 }
 
 export type ReadoutValues = {
   lapM: number
   straightM: number
   nearFraction: number
+  routeStats: RouteStats | null
+  circuitLengthM: number
+}
+
+/** "1.98 km — circuit 2.31 km, −14%". Pure. */
+export function formatRouteLength(stats: RouteStats, circuitLengthM: number): string {
+  const pct =
+    circuitLengthM > 0 ? Math.round(((stats.lengthM - circuitLengthM) / circuitLengthM) * 100) : 0
+  const sign = pct > 0 ? '+' : pct < 0 ? '−' : '±'
+  return `${formatDistance(stats.lengthM)} — circuit ${formatDistance(circuitLengthM)}, ${sign}${Math.abs(pct)}%`
+}
+
+/** "~45 m avg · 160 m max". Pure. */
+export function formatDeviation(stats: RouteStats): string {
+  return `~${Math.round(stats.meanDeviationM)} m avg · ${Math.round(stats.maxDeviationM)} m max`
 }
 
 function escapeHtml(value: string): string {
@@ -73,6 +103,8 @@ const LEGEND_STOPS: ReadonlyArray<[number, string]> = [
 
 /** Render the panel as an HTML string. Pure. */
 export function renderControls(view: ControlsView): string {
+  if (view.studyView) return renderStudySummary(view)
+
   const circuit = view.circuits.find((c) => c.id === view.selectedId) ?? view.circuits[0]
   const options = view.circuits
     .map(
@@ -119,6 +151,56 @@ export function renderControls(view: ControlsView): string {
       </label>
       <ul class="legend">${legend}</ul>
       ${savedSection}
+      ${renderRouteSection(view)}
+    </div>
+  `
+}
+
+function routeStatsRows(view: ControlsView): string {
+  const s = view.routeStats
+  if (!s) return ''
+  return `
+    <dl class="readout">
+      <div><dt>Route length</dt><dd data-role="route-length">${formatRouteLength(
+        s,
+        view.circuitLengthM,
+      )}</dd></div>
+      <div><dt>Deviation</dt><dd data-role="route-deviation">${formatDeviation(s)}</dd></div>
+    </dl>`
+}
+
+/** The "Route" block: the trace toggle, add/undo/clear while tracing, and — once
+ *  there is a route — its length/deviation stats and the "Study view" button. */
+function renderRouteSection(view: ControlsView): string {
+  const { tracing, routePointCount } = view
+  const noPoints = routePointCount === 0
+  const tracingControls = tracing
+    ? `
+        <span class="saved__when">${routePointCount} point${routePointCount === 1 ? '' : 's'}</span>
+        <div class="saved__actions">
+          <button type="button" data-role="undo-point"${noPoints ? ' disabled' : ''}>Undo point</button>
+          <button type="button" data-role="clear-route"${noPoints ? ' disabled' : ''}>Clear route</button>
+        </div>`
+    : ''
+
+  return `
+    <div class="saved" data-role="route">
+      <div class="saved__row">
+        <button type="button" data-role="trace">${tracing ? 'Stop tracing' : 'Trace route'}</button>
+      </div>
+      ${tracingControls}
+      ${routeStatsRows(view)}
+      ${view.routeStats ? '<button type="button" data-role="study">Study view</button>' : ''}
+    </div>
+  `
+}
+
+/** The stripped-down study view: just the route stats and a way back. */
+function renderStudySummary(view: ControlsView): string {
+  return `
+    <div class="controls study-summary" data-role="study-summary">
+      ${routeStatsRows(view)}
+      <button type="button" data-role="study-exit">Exit study view</button>
     </div>
   `
 }
@@ -168,6 +250,15 @@ export function updateReadout(root: ParentNode, values: ReadoutValues): void {
   if (lap) lap.textContent = formatDistance(values.lapM)
   if (straight) straight.textContent = formatDistance(values.straightM)
   if (proximity) proximity.textContent = formatNearFraction(values.nearFraction)
+
+  const routeLength = root.querySelector('[data-role="route-length"]')
+  const routeDeviation = root.querySelector('[data-role="route-deviation"]')
+  if (routeLength && values.routeStats) {
+    routeLength.textContent = formatRouteLength(values.routeStats, values.circuitLengthM)
+  }
+  if (routeDeviation && values.routeStats) {
+    routeDeviation.textContent = formatDeviation(values.routeStats)
+  }
 }
 
 /** Attach change listeners. Returns a disposer that removes them. */
@@ -175,10 +266,20 @@ export function bind(root: ParentNode, handlers: ControlsHandlers): () => void {
   const select = root.querySelector<HTMLSelectElement>('[data-role="circuit"]')
   const scale = root.querySelector<HTMLInputElement>('[data-role="scale"]')
   const streets = root.querySelector<HTMLInputElement>('[data-role="streets"]')
-  const save = root.querySelector<HTMLButtonElement>('[data-role="save"]')
-  const revert = root.querySelector<HTMLButtonElement>('[data-role="revert"]')
-  const deleteSaved = root.querySelector<HTMLButtonElement>('[data-role="delete-saved"]')
   const preview = root.querySelector<HTMLInputElement>('[data-role="preview-saved"]')
+
+  const btn = (role: string): HTMLButtonElement | null =>
+    root.querySelector<HTMLButtonElement>(`[data-role="${role}"]`)
+  const clicks: ReadonlyArray<[HTMLButtonElement | null, () => void]> = [
+    [btn('save'), handlers.onSave],
+    [btn('revert'), handlers.onRevertToSaved],
+    [btn('delete-saved'), handlers.onDeleteSaved],
+    [btn('trace'), handlers.onToggleTrace],
+    [btn('undo-point'), handlers.onUndoRoutePoint],
+    [btn('clear-route'), handlers.onClearRoute],
+    [btn('study'), handlers.onToggleStudyView],
+    [btn('study-exit'), handlers.onToggleStudyView],
+  ]
 
   const onSelect = (): void => {
     if (select) handlers.onSelectCircuit(select.value)
@@ -192,9 +293,6 @@ export function bind(root: ParentNode, handlers: ControlsHandlers): () => void {
   const onStreets = (): void => {
     if (streets) handlers.onToggleStreets(streets.checked)
   }
-  const onSave = (): void => handlers.onSave()
-  const onRevert = (): void => handlers.onRevertToSaved()
-  const onDelete = (): void => handlers.onDeleteSaved()
   const onPreview = (): void => {
     if (preview) handlers.onTogglePreviewSaved(preview.checked)
   }
@@ -203,19 +301,15 @@ export function bind(root: ParentNode, handlers: ControlsHandlers): () => void {
   scale?.addEventListener('change', onScale)
   scale?.addEventListener('input', onScale)
   streets?.addEventListener('change', onStreets)
-  save?.addEventListener('click', onSave)
-  revert?.addEventListener('click', onRevert)
-  deleteSaved?.addEventListener('click', onDelete)
   preview?.addEventListener('change', onPreview)
+  for (const [el, fn] of clicks) el?.addEventListener('click', fn)
 
   return () => {
     select?.removeEventListener('change', onSelect)
     scale?.removeEventListener('change', onScale)
     scale?.removeEventListener('input', onScale)
     streets?.removeEventListener('change', onStreets)
-    save?.removeEventListener('click', onSave)
-    revert?.removeEventListener('click', onRevert)
-    deleteSaved?.removeEventListener('click', onDelete)
     preview?.removeEventListener('change', onPreview)
+    for (const [el, fn] of clicks) el?.removeEventListener('click', fn)
   }
 }

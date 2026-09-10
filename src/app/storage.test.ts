@@ -7,6 +7,7 @@ const saved = (circuitId: string) =>
   makeSavedPlacement(
     circuitId,
     { anchor: [-8.61, 41.15], rotationRad: 0.2, scale: 1.5 },
+    [],
     new Date('2026-09-10T12:00:00.000Z'),
   )
 

@@ -158,6 +158,14 @@ body,
   font-style: italic;
 }
 
+.controls.study-summary {
+  gap: 12px;
+}
+
+.controls.study-summary .readout {
+  font-size: 14px;
+}
+
 .rotate-handle {
   width: 18px;
   height: 18px;

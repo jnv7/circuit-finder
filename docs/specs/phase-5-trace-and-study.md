@@ -1,6 +1,6 @@
 # Spec — Phase 5: Trace & study
 
-Status: `todo`
+Status: `done` (2026-09-10)
 Depends on: [phase-2-map-overlay.md](phase-2-map-overlay.md),
 [phase-3-street-proximity.md](phase-3-street-proximity.md),
 [phase-4-save-restore-export.md](phase-4-save-restore-export.md)

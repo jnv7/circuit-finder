@@ -8,7 +8,10 @@ import type { LonLat } from './geo'
 import type { Placement } from './app/overlay'
 import { MAX_SCALE, MIN_SCALE } from './app/state'
 
-export const PLACEMENTS_SCHEMA_VERSION = 1
+export const PLACEMENTS_SCHEMA_VERSION = 2
+
+/** Stored schema versions this build can read (all normalised to the latest). */
+const ACCEPTED_SCHEMA_VERSIONS = [1, 2]
 
 export type SavedPlacement = {
   schemaVersion: typeof PLACEMENTS_SCHEMA_VERSION
@@ -16,6 +19,8 @@ export type SavedPlacement = {
   anchor: LonLat
   rotationRad: number
   scale: number
+  /** The traced route: ordered [lon, lat] vertices, ≥ 2 when present, omitted when empty. */
+  route?: LonLat[]
   /** ISO 8601 UTC. */
   savedAt: string
 }
@@ -42,8 +47,13 @@ export function validatePlacement(value: unknown, where = 'placement'): SavedPla
   }
   const record = value as Record<string, unknown>
 
-  if (record['schemaVersion'] !== PLACEMENTS_SCHEMA_VERSION) {
-    throw new Error(`${where} schemaVersion must be ${PLACEMENTS_SCHEMA_VERSION}`)
+  if (
+    typeof record['schemaVersion'] !== 'number' ||
+    !ACCEPTED_SCHEMA_VERSIONS.includes(record['schemaVersion'])
+  ) {
+    throw new Error(
+      `${where} schemaVersion must be one of ${ACCEPTED_SCHEMA_VERSIONS.join(', ')}`,
+    )
   }
   if (!isNonEmptyString(record['circuitId'])) {
     throw new Error(`${where} circuitId must be a non-empty string`)
@@ -78,7 +88,9 @@ export function validatePlacement(value: unknown, where = 'placement'): SavedPla
     throw new Error(`${where} savedAt must be a valid date string`)
   }
 
-  return {
+  const route = validateRoute(record['route'], where)
+
+  const out: SavedPlacement = {
     schemaVersion: PLACEMENTS_SCHEMA_VERSION,
     circuitId: record['circuitId'],
     anchor: [anchor[0], anchor[1]],
@@ -86,15 +98,48 @@ export function validatePlacement(value: unknown, where = 'placement'): SavedPla
     scale: record['scale'],
     savedAt: record['savedAt'],
   }
+  if (route.length >= 2) out.route = route
+  return out
 }
 
-/** Build a fresh SavedPlacement from the current map state. */
+/**
+ * Validate an optional stored `route`: absent / empty → `[]`; otherwise an array
+ * of ≥ 2 `[lon, lat]` pairs in range. A single-point route is a data error.
+ */
+function validateRoute(value: unknown, where: string): LonLat[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) {
+    throw new Error(`${where} route must be an array`)
+  }
+  if (value.length === 1) {
+    throw new Error(`${where} route must have at least 2 points`)
+  }
+  return value.map((pair, i) => {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      !isFiniteNumber(pair[0]) ||
+      !isFiniteNumber(pair[1]) ||
+      pair[0] < -180 ||
+      pair[0] > 180 ||
+      pair[1] < -90 ||
+      pair[1] > 90
+    ) {
+      throw new Error(`${where} route[${i}] must be [lon, lat] within valid ranges`)
+    }
+    return [pair[0], pair[1]] as LonLat
+  })
+}
+
+/** Build a fresh SavedPlacement from the current map state. A route shorter than
+ *  2 points is stored as an omitted field. */
 export function makeSavedPlacement(
   circuitId: string,
   placement: Placement,
+  route: readonly LonLat[],
   now: Date,
 ): SavedPlacement {
-  return {
+  const out: SavedPlacement = {
     schemaVersion: PLACEMENTS_SCHEMA_VERSION,
     circuitId,
     anchor: [placement.anchor[0], placement.anchor[1]],
@@ -102,6 +147,8 @@ export function makeSavedPlacement(
     scale: placement.scale,
     savedAt: now.toISOString(),
   }
+  if (route.length >= 2) out.route = route.map((p) => [p[0], p[1]] as LonLat)
+  return out
 }
 
 /** The Phase 2 `Placement` carried by a SavedPlacement. */
@@ -111,6 +158,16 @@ export function savedToPlacement(saved: SavedPlacement): Placement {
     rotationRad: saved.rotationRad,
     scale: saved.scale,
   }
+}
+
+/** The traced route carried by a SavedPlacement, as a fresh array (`[]` if none). */
+export function savedRoute(saved: SavedPlacement): LonLat[] {
+  return (saved.route ?? []).map((p) => [p[0], p[1]] as LonLat)
+}
+
+/** Same length and exact component-wise equality. */
+export function routesEqual(a: readonly LonLat[], b: readonly LonLat[]): boolean {
+  return a.length === b.length && a.every((p, i) => p[0] === b[i]![0] && p[1] === b[i]![1])
 }
 
 /** Exact compare of anchor (both components), rotation and scale. */

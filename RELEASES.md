@@ -8,6 +8,36 @@ Newest release first.
 
 ---
 
+## 0.6.0 — Trace your route and study it (2026-09-10)
+
+**Draw the run you'd actually do.** With a circuit placed over Porto, click
+**Trace route** and then click your way along the streets underneath it. A blue
+line follows your clicks. **Undo point** takes back the last click; **Clear
+route** starts over. The circuit outline holds still while you trace.
+
+**What the panel tells you:**
+
+- **Route length** — how long your traced route really is, next to the circuit's
+  own length at the current scale, with the difference as a percentage
+  (e.g. "3.98 km — circuit 4.31 km, −8%").
+- **Deviation** — roughly how far your route wanders from the circuit shape,
+  as an average and a worst-point figure in metres ("~45 m avg · 160 m max").
+  It's a description, not a score — there's no pass mark, you decide what's
+  close enough. Moving, rotating or rescaling the circuit updates it live.
+
+**Study view.** Once you have a route, **Study view** clears everything away —
+panels, the circuit outline, the street shading — and leaves just the map and
+your route with the two numbers. Good for a screenshot, or print the page from
+your browser. **Exit study view** brings the tools back.
+
+**It's saved with the placement.** Saving now stores your traced route too, so
+reopening the app (or switching back to that circuit) brings the whole thing
+back — placement and route. Reverting and deleting include the route as well.
+Placements you saved before this release still load fine; they just have no
+route yet.
+
+---
+
 ## 0.5.0 — Save a placement and pick up where you left off (2026-09-10)
 
 **Found a loop you like? Keep it.** Each circuit now remembers one placement.

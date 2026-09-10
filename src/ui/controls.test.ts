@@ -3,7 +3,14 @@ import { describe, it, expect, vi } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
 import { formatDistance, readout } from '../app/overlay'
 import { makeSavedPlacement } from '../placements'
-import { bind, formatSavedAgo, renderControls, updateReadout } from './controls'
+import {
+  bind,
+  formatDeviation,
+  formatRouteLength,
+  formatSavedAgo,
+  renderControls,
+  updateReadout,
+} from './controls'
 
 const circuits = loadMetricCircuits()
 const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
@@ -14,11 +21,18 @@ const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
   saved: null,
   hasUnsavedChanges: true,
   previewingSaved: false,
+  tracing: false,
+  studyView: false,
+  routePointCount: 0,
+  routeStats: null,
+  circuitLengthM: 4000,
   ...over,
 })
 
+const stats = { lengthM: 3440, meanDeviationM: 45.2, maxDeviationM: 160.8 }
+
 const savedFor = (id: string, savedAt: string) => ({
-  ...makeSavedPlacement(id, { anchor: [-8.61, 41.15], rotationRad: 0.2, scale: 1.5 }, new Date()),
+  ...makeSavedPlacement(id, { anchor: [-8.61, 41.15], rotationRad: 0.2, scale: 1.5 }, [], new Date()),
   savedAt,
 })
 
@@ -30,6 +44,10 @@ const noopHandlers = () => ({
   onRevertToSaved: vi.fn(),
   onDeleteSaved: vi.fn(),
   onTogglePreviewSaved: vi.fn(),
+  onToggleTrace: vi.fn(),
+  onUndoRoutePoint: vi.fn(),
+  onClearRoute: vi.fn(),
+  onToggleStudyView: vi.fn(),
 })
 
 describe('renderControls', () => {
@@ -173,15 +191,111 @@ describe('bind', () => {
     preview.dispatchEvent(new Event('change'))
     expect(handlers.onTogglePreviewSaved).toHaveBeenCalledWith(true)
   })
+
+  it('wires trace / undo / clear / study and study-exit', () => {
+    const root = document.createElement('div')
+    root.innerHTML = renderControls(view({ tracing: true, routePointCount: 2, routeStats: stats }))
+    const handlers = noopHandlers()
+    bind(root, handlers)
+
+    for (const [role, fn] of [
+      ['trace', 'onToggleTrace'],
+      ['undo-point', 'onUndoRoutePoint'],
+      ['clear-route', 'onClearRoute'],
+      ['study', 'onToggleStudyView'],
+    ] as const) {
+      root.querySelector<HTMLButtonElement>(`[data-role="${role}"]`)!.dispatchEvent(new Event('click'))
+      expect(handlers[fn]).toHaveBeenCalledTimes(1)
+    }
+
+    const study = document.createElement('div')
+    study.innerHTML = renderControls(view({ studyView: true, routeStats: stats }))
+    const h2 = noopHandlers()
+    bind(study, h2)
+    study.querySelector<HTMLButtonElement>('[data-role="study-exit"]')!.dispatchEvent(new Event('click'))
+    expect(h2.onToggleStudyView).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('updateReadout', () => {
   it('rewrites just the readout cells, including % near a street', () => {
     const root = document.createElement('div')
     root.innerHTML = renderControls(view())
-    updateReadout(root, { lapM: 1850, straightM: 940, nearFraction: 0.42 })
+    updateReadout(root, {
+      lapM: 1850,
+      straightM: 940,
+      nearFraction: 0.42,
+      routeStats: null,
+      circuitLengthM: 4000,
+    })
     expect(root.querySelector('[data-role="lap"]')!.textContent).toBe('1.85 km')
     expect(root.querySelector('[data-role="straight"]')!.textContent).toBe('940 m')
     expect(root.querySelector('[data-role="proximity"]')!.textContent).toBe('42%')
+  })
+
+  it('rewrites the route cells when stats are present', () => {
+    const root = document.createElement('div')
+    root.innerHTML = renderControls(view({ routeStats: stats, circuitLengthM: 4000 }))
+    updateReadout(root, {
+      lapM: 1,
+      straightM: 1,
+      nearFraction: 0,
+      routeStats: { lengthM: 5000, meanDeviationM: 10, maxDeviationM: 20 },
+      circuitLengthM: 4000,
+    })
+    expect(root.querySelector('[data-role="route-length"]')!.textContent).toContain('+25%')
+    expect(root.querySelector('[data-role="route-deviation"]')!.textContent).toBe(
+      '~10 m avg · 20 m max',
+    )
+  })
+})
+
+describe('renderControls — route section', () => {
+  it('shows the Trace button, label following tracing', () => {
+    expect(renderControls(view({ tracing: false }))).toContain('>Trace route<')
+    expect(renderControls(view({ tracing: true }))).toContain('>Stop tracing<')
+  })
+
+  it('shows undo/clear and a point count only while tracing, disabled at 0', () => {
+    expect(renderControls(view({ tracing: false }))).not.toContain('data-role="undo-point"')
+    const html = renderControls(view({ tracing: true, routePointCount: 0 }))
+    expect(html).toMatch(/data-role="undo-point"[^>]*disabled/)
+    expect(html).toContain('0 points')
+    const html2 = renderControls(view({ tracing: true, routePointCount: 3 }))
+    expect(html2).not.toMatch(/data-role="undo-point"[^>]*disabled/)
+    expect(html2).toContain('3 points')
+  })
+
+  it('shows the stats and Study button only with a non-null routeStats', () => {
+    expect(renderControls(view({ routeStats: null }))).not.toContain('data-role="study"')
+    const html = renderControls(view({ routeStats: stats }))
+    expect(html).toContain('data-role="route-length"')
+    expect(html).toContain('data-role="route-deviation"')
+    expect(html).toContain('data-role="study"')
+  })
+})
+
+describe('renderControls — study view', () => {
+  it('renders only the study summary and an exit button', () => {
+    const html = renderControls(view({ studyView: true, routeStats: stats }))
+    expect(html).toContain('data-role="study-summary"')
+    expect(html).toContain('data-role="study-exit"')
+    expect(html).toContain('data-role="route-length"')
+    expect(html).not.toContain('data-role="circuit"')
+    expect(html).not.toContain('data-role="save"')
+  })
+})
+
+describe('formatRouteLength / formatDeviation', () => {
+  it('signs the % difference and rounds the deviation', () => {
+    expect(formatRouteLength({ lengthM: 3600, meanDeviationM: 0, maxDeviationM: 0 }, 4000)).toContain(
+      '−10%',
+    )
+    expect(formatRouteLength({ lengthM: 4400, meanDeviationM: 0, maxDeviationM: 0 }, 4000)).toContain(
+      '+10%',
+    )
+    expect(formatDeviation({ lengthM: 0, meanDeviationM: 44.6, maxDeviationM: 161.2 })).toBe(
+      '~45 m avg · 161 m max',
+    )
   })
 })

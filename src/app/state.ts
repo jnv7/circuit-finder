@@ -7,6 +7,8 @@ import type { Placement } from './overlay'
 export type AppState = {
   circuitId: string
   placement: Placement
+  /** The hand-traced running route: ordered [lon, lat] vertices (Phase 5). */
+  route: LonLat[]
 }
 
 /** Scale multiplier bounds (Phase 2 decision: numeric input, 0.5–3.0). */
@@ -24,6 +26,7 @@ export function initialState(circuits: readonly MetricCircuit[], mapCenter: LonL
   return {
     circuitId: first.id,
     placement: { anchor: mapCenter, rotationRad: 0, scale: 1 },
+    route: [],
   }
 }
 
@@ -35,7 +38,8 @@ export function selectCircuit(
   if (!circuits.some((c) => c.id === id)) {
     throw new Error(`selectCircuit: unknown circuit id "${id}"`)
   }
-  return { ...state, circuitId: id }
+  // A traced route belongs to one circuit placement; changing circuit drops it.
+  return { ...state, circuitId: id, route: [] }
 }
 
 /**
@@ -49,6 +53,7 @@ export function loadPlacement(
   circuits: readonly MetricCircuit[],
   circuitId: string,
   placement: Placement,
+  route: readonly LonLat[] = [],
 ): AppState {
   if (!circuits.some((c) => c.id === circuitId)) {
     throw new Error(`loadPlacement: unknown circuit id "${circuitId}"`)
@@ -61,7 +66,25 @@ export function loadPlacement(
       rotationRad: placement.rotationRad,
       scale: placement.scale,
     },
+    route: route.map((p) => [p[0], p[1]] as LonLat),
   }
+}
+
+/** Append a vertex to the traced route. */
+export function addRoutePoint(state: AppState, p: LonLat): AppState {
+  return { ...state, route: [...state.route, [p[0], p[1]]] }
+}
+
+/** Remove the last traced vertex (no-op on an empty route). */
+export function undoRoutePoint(state: AppState): AppState {
+  if (state.route.length === 0) return state
+  return { ...state, route: state.route.slice(0, -1) }
+}
+
+/** Discard the whole traced route. */
+export function clearRoute(state: AppState): AppState {
+  if (state.route.length === 0) return state
+  return { ...state, route: [] }
 }
 
 export function moveTo(state: AppState, anchor: LonLat): AppState {

@@ -1,22 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
 import {
+  addRoutePoint,
+  clearRoute,
   initialState,
   loadPlacement,
   moveTo,
   rotateTo,
   selectCircuit,
   setScale,
+  undoRoutePoint,
 } from './state'
 
 const circuits = loadMetricCircuits()
 const center = [-8.6291, 41.1579] as const
 
 describe('initialState', () => {
-  it('picks the first circuit, centred, unrotated, 1:1', () => {
+  it('picks the first circuit, centred, unrotated, 1:1, no route', () => {
     const s = initialState(circuits, center)
     expect(s.circuitId).toBe(circuits[0]!.id)
     expect(s.placement).toEqual({ anchor: center, rotationRad: 0, scale: 1 })
+    expect(s.route).toEqual([])
   })
 
   it('throws on an empty circuit list', () => {
@@ -33,13 +37,28 @@ describe('reducers', () => {
     rotateTo(base, 1)
     setScale(base, 2)
     selectCircuit(base, circuits, circuits[1]!.id)
+    addRoutePoint(base, [1, 2])
+    undoRoutePoint(base)
+    clearRoute(base)
     expect(base).toEqual(snapshot)
   })
 
-  it('selectCircuit keeps the placement and swaps the id', () => {
-    const next = selectCircuit(base, circuits, circuits[1]!.id)
+  it('selectCircuit keeps the placement, swaps the id, drops the route', () => {
+    const traced = addRoutePoint(base, [-8.6, 41.15])
+    const next = selectCircuit(traced, circuits, circuits[1]!.id)
     expect(next.circuitId).toBe(circuits[1]!.id)
     expect(next.placement).toBe(base.placement)
+    expect(next.route).toEqual([])
+  })
+
+  it('addRoutePoint / undoRoutePoint / clearRoute edit only the route', () => {
+    const a = addRoutePoint(base, [1, 2])
+    const b = addRoutePoint(a, [3, 4])
+    expect(b.route).toEqual([[1, 2], [3, 4]])
+    expect(undoRoutePoint(b).route).toEqual([[1, 2]])
+    expect(clearRoute(b).route).toEqual([])
+    expect(undoRoutePoint(base)).toBe(base)
+    expect(b.placement).toBe(base.placement)
   })
 
   it('selectCircuit throws on an unknown id', () => {
@@ -57,12 +76,20 @@ describe('reducers', () => {
     expect(setScale(base, 99).placement.scale).toBe(3)
   })
 
-  it('loadPlacement swaps the circuit and applies the placement', () => {
+  it('loadPlacement swaps the circuit and applies the placement and route', () => {
     const placement = { anchor: [-8.5, 41.2] as const, rotationRad: 1.1, scale: 2 }
-    const next = loadPlacement(base, circuits, circuits[2]!.id, placement)
+    const route = [[-8.5, 41.2], [-8.49, 41.21]] as const
+    const next = loadPlacement(base, circuits, circuits[2]!.id, placement, route)
     expect(next.circuitId).toBe(circuits[2]!.id)
     expect(next.placement).toEqual(placement)
     expect(next.placement.anchor).not.toBe(placement.anchor)
+    expect(next.route).toEqual(route)
+    expect(next.route).not.toBe(route)
+  })
+
+  it('loadPlacement defaults to an empty route', () => {
+    const placement = { anchor: [-8.5, 41.2] as const, rotationRad: 0, scale: 1 }
+    expect(loadPlacement(base, circuits, circuits[0]!.id, placement).route).toEqual([])
   })
 
   it('loadPlacement throws on an unknown circuit', () => {

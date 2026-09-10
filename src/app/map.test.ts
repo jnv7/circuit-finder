@@ -32,6 +32,12 @@ const mount = () => {
 const panel = (container: HTMLElement) => container.querySelector('.panel') as HTMLElement
 const click = (container: HTMLElement, role: string) =>
   panel(container).querySelector(`[data-role="${role}"]`)!.dispatchEvent(new Event('click'))
+const mapClick = (container: HTMLElement, x: number, y: number) =>
+  container
+    .querySelector('.leaflet-container')!
+    .dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true }))
+const strokes = (container: HTMLElement) =>
+  [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('stroke'))
 
 describe('createMapApp', () => {
   it('mounts the map with a street layer and coloured centreline segments, and tears down cleanly', () => {
@@ -90,10 +96,52 @@ describe('createMapApp — saved placements', () => {
     container.remove()
   })
 
+  it('traces a route by clicking, and saves it with the placement', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'trace')
+    mapClick(container, 120, 140)
+    mapClick(container, 360, 320)
+
+    const routeStroke = strokes(container).filter((s) => s === '#1565c0')
+    expect(routeStroke.length).toBeGreaterThan(0)
+    expect(panel(container).textContent).toMatch(/Route length/)
+
+    click(container, 'save')
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+    expect(stored[circuits[0]!.id].route).toHaveLength(2)
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('study view hides the circuit and street layers and strips the panel', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'trace')
+    mapClick(container, 120, 140)
+    mapClick(container, 360, 320)
+    click(container, 'study')
+
+    expect(strokes(container)).not.toContain('#8a8a8a') // street layer gone
+    expect(strokes(container)).toContain('#1565c0') // route kept
+    expect(panel(container).querySelector('[data-role="study-summary"]')).not.toBeNull()
+    expect(panel(container).querySelector('[data-role="circuit"]')).toBeNull()
+
+    click(container, 'study-exit')
+    expect(panel(container).querySelector('[data-role="circuit"]')).not.toBeNull()
+
+    app.destroy()
+    container.remove()
+  })
+
   it('opens at a pre-seeded saved placement for the initial circuit', () => {
     const saved = makeSavedPlacement(
       circuits[0]!.id,
       { anchor: [-8.6, 41.16], rotationRad: 0, scale: 2 },
+      [],
       new Date(),
     )
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ [circuits[0]!.id]: saved }))

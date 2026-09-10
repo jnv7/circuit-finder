@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { Placement } from './app/overlay'
+import type { LonLat } from './geo'
 import {
   PLACEMENTS_SCHEMA_VERSION,
   getPlacement,
@@ -7,6 +8,8 @@ import {
   parseStoredPlacements,
   placementsEqual,
   removePlacement,
+  routesEqual,
+  savedRoute,
   savedToPlacement,
   serialisePlacements,
   setPlacement,
@@ -38,7 +41,10 @@ describe('validatePlacement', () => {
   it.each([
     ['not an object', 42],
     ['null', null],
-    ['wrong schemaVersion', { ...good(), schemaVersion: 2 }],
+    ['wrong schemaVersion', { ...good(), schemaVersion: 3 }],
+    ['route with one point', { ...good(), route: [[-8.6, 41.1]] }],
+    ['route with a non-pair entry', { ...good(), route: [[-8.6, 41.1], [1, 2, 3]] }],
+    ['route with an out-of-range coord', { ...good(), route: [[-8.6, 41.1], [999, 0]] }],
     ['blank circuitId', { ...good(), circuitId: '  ' }],
     ['missing circuitId', { ...good(), circuitId: undefined }],
     ['anchor not a pair', { ...good(), anchor: [1] }],
@@ -54,19 +60,66 @@ describe('validatePlacement', () => {
   })
 })
 
+const route: LonLat[] = [
+  [-8.61, 41.15],
+  [-8.6, 41.155],
+  [-8.595, 41.15],
+]
+
 describe('makeSavedPlacement', () => {
   it('copies the placement and stamps savedAt from now', () => {
     const now = new Date('2026-09-10T12:00:00.000Z')
-    const saved = makeSavedPlacement('silverstone', placement, now)
+    const saved = makeSavedPlacement('silverstone', placement, [], now)
     expect(saved).toEqual(good())
     expect(saved.anchor).not.toBe(placement.anchor)
   })
+
+  it('omits a route shorter than 2 points, keeps one with 2+', () => {
+    const now = new Date('2026-09-10T12:00:00.000Z')
+    expect(makeSavedPlacement('silverstone', placement, [[-8.6, 41.1]], now).route).toBeUndefined()
+    const saved = makeSavedPlacement('silverstone', placement, route, now)
+    expect(saved.route).toEqual(route)
+    expect(saved.route).not.toBe(route)
+  })
 })
 
-describe('savedToPlacement', () => {
-  it('round-trips through makeSavedPlacement', () => {
-    const saved = makeSavedPlacement('silverstone', placement, new Date())
+describe('savedToPlacement / savedRoute', () => {
+  it('round-trips the placement through makeSavedPlacement', () => {
+    const saved = makeSavedPlacement('silverstone', placement, [], new Date())
     expect(savedToPlacement(saved)).toEqual(placement)
+  })
+
+  it('savedRoute returns [] when absent and a copy otherwise', () => {
+    expect(savedRoute(makeSavedPlacement('silverstone', placement, [], new Date()))).toEqual([])
+    const saved = makeSavedPlacement('silverstone', placement, route, new Date())
+    expect(savedRoute(saved)).toEqual(route)
+    expect(savedRoute(saved)).not.toBe(saved.route)
+  })
+})
+
+describe('routesEqual', () => {
+  it('is true for identical routes, false for a moved vertex or a length change', () => {
+    expect(routesEqual(route, route.map((p) => [p[0], p[1]]))).toBe(true)
+    expect(routesEqual(route, [...route.slice(0, 2), [-8.59, 41.16]])).toBe(false)
+    expect(routesEqual(route, route.slice(0, 2))).toBe(false)
+  })
+})
+
+describe('validatePlacement — schema upgrade', () => {
+  it('accepts a stored v1 record and returns it as v2 with no route', () => {
+    const v1 = { ...good(), schemaVersion: 1 }
+    const v = validatePlacement(v1)
+    expect(v.schemaVersion).toBe(PLACEMENTS_SCHEMA_VERSION)
+    expect(v.route).toBeUndefined()
+  })
+
+  it('round-trips a v2 record that carries a route', () => {
+    const v = validatePlacement({ ...good(), route })
+    expect(v.route).toEqual(route)
+  })
+
+  it('normalises an empty route to an absent field', () => {
+    expect(validatePlacement({ ...good(), route: [] }).route).toBeUndefined()
   })
 })
 
@@ -86,8 +139,8 @@ describe('placementsEqual', () => {
 })
 
 describe('store ops', () => {
-  const a = makeSavedPlacement('silverstone', placement, new Date('2026-09-10T12:00:00.000Z'))
-  const b = makeSavedPlacement('hungaroring', placement, new Date('2026-09-10T13:00:00.000Z'))
+  const a = makeSavedPlacement('silverstone', placement, [], new Date('2026-09-10T12:00:00.000Z'))
+  const b = makeSavedPlacement('hungaroring', placement, [], new Date('2026-09-10T13:00:00.000Z'))
 
   it('setPlacement adds without mutating', () => {
     const store = setPlacement({}, a)
@@ -97,7 +150,7 @@ describe('store ops', () => {
   })
 
   it('setPlacement replaces the same circuit entry', () => {
-    const a2 = makeSavedPlacement('silverstone', { ...placement, scale: 2 }, new Date())
+    const a2 = makeSavedPlacement('silverstone', { ...placement, scale: 2 }, [], new Date())
     const next = setPlacement(setPlacement({}, a), a2)
     expect(next['silverstone']).toBe(a2)
   })
@@ -152,7 +205,7 @@ describe('parseStoredPlacements', () => {
   it('round-trips through serialisePlacements', () => {
     const store = setPlacement(
       {},
-      makeSavedPlacement('silverstone', placement, new Date('2026-09-10T12:00:00.000Z')),
+      makeSavedPlacement('silverstone', placement, route, new Date('2026-09-10T12:00:00.000Z')),
     )
     expect(parseStoredPlacements(serialisePlacements(store))).toEqual(store)
   })

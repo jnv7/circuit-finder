@@ -12,23 +12,40 @@ import { overlayLatLngs, readout } from './overlay'
 import { LEVELS, lapProximity, proximityColor, quantize } from './proximity'
 import { bearingFromDrag, handlePixel } from './rotate'
 import type { AppState } from './state'
-import { initialState, loadPlacement, moveTo, rotateTo, selectCircuit, setScale } from './state'
+import {
+  addRoutePoint,
+  clearRoute,
+  initialState,
+  loadPlacement,
+  moveTo,
+  rotateTo,
+  selectCircuit,
+  setScale,
+  undoRoutePoint,
+} from './state'
 import {
   getPlacement,
   makeSavedPlacement,
   placementsEqual,
   removePlacement,
+  routesEqual,
+  savedRoute,
   savedToPlacement,
   setPlacement,
 } from '../placements'
 import type { SavedPlacement } from '../placements'
 import { loadPlacements, savePlacements } from './storage'
+import { routeStats } from './trace'
+import type { RouteStats } from './trace'
 import { bind, renderControls, updateReadout } from '../ui/controls'
 
 export { PORTO_CENTER, PORTO_ZOOM }
 
 /** Screen distance from the anchor to the rotate handle. */
 const HANDLE_PIXEL_RADIUS = 90
+
+/** Traced-route polyline colour. */
+const ROUTE_COLOR = '#1565c0'
 
 const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const OSM_ATTRIBUTION =
@@ -78,12 +95,20 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   // stays authoritative for the session even if a write fails.
   let placements = loadPlacements()
   let previewingSaved = false
+  let tracing = false
+  let studyView = false
 
   let state: AppState = initialState(circuits, PORTO_CENTER)
   {
     const saved = getPlacement(placements, state.circuitId)
     if (saved) {
-      state = loadPlacement(state, circuits, saved.circuitId, savedToPlacement(saved))
+      state = loadPlacement(
+        state,
+        circuits,
+        saved.circuitId,
+        savedToPlacement(saved),
+        savedRoute(saved),
+      )
       map.setView(toLatLng(state.placement.anchor))
     }
   }
@@ -113,12 +138,38 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     zIndexOffset: 1000,
   }).addTo(map)
 
+  // Traced route: one polyline, plus a vertex-marker layer shown only in trace mode.
+  const routeLine = L.polyline([], {
+    weight: 4,
+    color: ROUTE_COLOR,
+    interactive: false,
+  }).addTo(map)
+  const vertexLayer = L.layerGroup().addTo(map)
+
   const savedForCurrent = (): SavedPlacement | undefined =>
     getPlacement(placements, state.circuitId)
   const hasUnsavedChanges = (): boolean => {
     const saved = savedForCurrent()
-    return !saved || !placementsEqual(state.placement, savedToPlacement(saved))
+    if (!saved) return true
+    return (
+      !placementsEqual(state.placement, savedToPlacement(saved)) ||
+      !routesEqual(state.route, savedRoute(saved))
+    )
   }
+
+  /** Stats for the current route against the *live* placement's centreline. */
+  const currentRouteStats = (): RouteStats | null => {
+    if (state.route.length < 2) return null
+    const ring = overlayLatLngs(circuitById(state.circuitId), state.placement).map((c) =>
+      project.toLocal(c),
+    )
+    return routeStats(
+      state.route.map((c) => project.toLocal(c)),
+      ring,
+    )
+  }
+  const circuitLapM = (): number =>
+    readout(circuitById(state.circuitId), state.placement.scale).lapM
 
   function render({ repositionHandle = true }: { repositionHandle?: boolean } = {}): void {
     const circuit = circuitById(state.circuitId)
@@ -146,10 +197,11 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       buckets[q]!.setStyle(preview ? { dashArray: '5 6', opacity: 0.55 } : { dashArray: undefined, opacity: 0.9 })
     }
 
-    // While previewing the saved placement the handle is inert and hidden, and
-    // the live anchor/rotation still drive it so nothing jumps on toggle-off.
-    handle.setOpacity(preview ? 0 : 1)
-    if (preview) handle.dragging?.disable()
+    // The handle is inert and hidden while previewing, tracing, or in study
+    // view; the live anchor/rotation still drive it so nothing jumps on exit.
+    const inert = preview || tracing || studyView
+    handle.setOpacity(inert ? 0 : 1)
+    if (inert) handle.dragging?.disable()
     else handle.dragging?.enable()
     if (repositionHandle) {
       const centerPx = map.latLngToContainerPoint(toLatLng(state.placement.anchor))
@@ -161,8 +213,45 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       handle.setLatLng(map.containerPointToLatLng(L.point(hp[0], hp[1])))
     }
 
+    // Traced route.
+    routeLine.setLatLngs(state.route.map(toLatLng))
+    vertexLayer.clearLayers()
+    if (tracing) {
+      for (const p of state.route) {
+        L.circleMarker(toLatLng(p), {
+          radius: 4,
+          weight: 2,
+          color: ROUTE_COLOR,
+          fillColor: '#fff',
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(vertexLayer)
+      }
+    }
+
     const { lapM, straightM } = readout(circuit, shown.scale)
-    updateReadout(panelEl, { lapM, straightM, nearFraction })
+    updateReadout(panelEl, {
+      lapM,
+      straightM,
+      nearFraction,
+      routeStats: currentRouteStats(),
+      circuitLengthM: circuitLapM(),
+    })
+  }
+
+  /** Add or remove the circuit / street layers for the current trace + study state. */
+  function applyLayerVisibility(): void {
+    const showCircuit = !studyView
+    for (const b of buckets) {
+      if (showCircuit) b.addTo(map)
+      else b.remove()
+    }
+    // The drag target is also off while tracing so map clicks reach the map.
+    if (showCircuit && !tracing) dragTarget.addTo(map)
+    else dragTarget.remove()
+    if (showStreets && !studyView) streetLayer.addTo(map)
+    else streetLayer.remove()
+    container.classList.toggle('circuit-finder--study', studyView)
   }
 
   // rAF-coalesced re-render: pointer events schedule a frame instead of
@@ -190,6 +279,11 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       saved,
       hasUnsavedChanges: hasUnsavedChanges(),
       previewingSaved,
+      tracing,
+      studyView,
+      routePointCount: state.route.length,
+      routeStats: currentRouteStats(),
+      circuitLengthM: circuitLapM(),
     })
     disposeControls?.()
     disposeControls = bind(panelEl, {
@@ -198,7 +292,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         previewingSaved = false
         const s = getPlacement(placements, id)
         if (s) {
-          state = loadPlacement(state, circuits, s.circuitId, savedToPlacement(s))
+          state = loadPlacement(state, circuits, s.circuitId, savedToPlacement(s), savedRoute(s))
           map.setView(toLatLng(state.placement.anchor))
         }
         renderPanel()
@@ -211,8 +305,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       },
       onToggleStreets(show) {
         showStreets = show
-        if (show) streetLayer.addTo(map)
-        else streetLayer.remove()
+        applyLayerVisibility()
       },
       onSave() {
         const existing = savedForCurrent()
@@ -225,7 +318,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         }
         placements = setPlacement(
           placements,
-          makeSavedPlacement(state.circuitId, state.placement, new Date()),
+          makeSavedPlacement(state.circuitId, state.placement, state.route, new Date()),
         )
         savePlacements(placements)
         previewingSaved = false
@@ -234,7 +327,13 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       onRevertToSaved() {
         const saved = savedForCurrent()
         if (!saved) return
-        state = loadPlacement(state, circuits, saved.circuitId, savedToPlacement(saved))
+        state = loadPlacement(
+          state,
+          circuits,
+          saved.circuitId,
+          savedToPlacement(saved),
+          savedRoute(saved),
+        )
         previewingSaved = false
         map.setView(toLatLng(state.placement.anchor))
         renderPanel()
@@ -255,6 +354,30 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         previewingSaved = show && savedForCurrent() !== undefined
         render()
       },
+      onToggleTrace() {
+        tracing = !tracing
+        if (tracing) previewingSaved = false
+        applyLayerVisibility()
+        renderPanel()
+        render()
+      },
+      onUndoRoutePoint() {
+        state = undoRoutePoint(state)
+        renderPanel()
+        render()
+      },
+      onClearRoute() {
+        state = clearRoute(state)
+        renderPanel()
+        render()
+      },
+      onToggleStudyView() {
+        studyView = !studyView
+        if (studyView) tracing = false
+        applyLayerVisibility()
+        renderPanel()
+        render()
+      },
     })
   }
 
@@ -266,11 +389,20 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   let moveFrom: { pointer: L.LatLng; anchor: LonLat } | null = null
 
   const onOverlayDown = (e: L.LeafletMouseEvent): void => {
-    if (previewingSaved) return // the previewed ring is not draggable
+    if (previewingSaved || tracing || studyView) return // overlay is locked
     moveFrom = { pointer: e.latlng, anchor: state.placement.anchor }
     map.dragging.disable()
     L.DomEvent.stop(e)
   }
+
+  // --- Trace: click the map to append a route vertex ------------------------
+  const onMapClick = (e: L.LeafletMouseEvent): void => {
+    if (!tracing) return
+    state = addRoutePoint(state, [e.latlng.lng, e.latlng.lat])
+    render()
+    renderPanel()
+  }
+  map.on('click', onMapClick)
   const onMapMove = (e: L.LeafletMouseEvent): void => {
     if (!moveFrom) return
     const dLon = e.latlng.lng - moveFrom.pointer.lng
@@ -317,6 +449,8 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       disposeControls?.()
       dragTarget.off()
       handle.off()
+      routeLine.remove()
+      vertexLayer.remove()
       map.off()
       map.remove()
       container.replaceChildren()
