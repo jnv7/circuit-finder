@@ -8,6 +8,34 @@ Newest release first.
 
 ---
 
+## 0.5.0 — Save a placement and pick up where you left off (2026-09-10)
+
+**Found a loop you like? Keep it.** Each circuit now remembers one placement.
+
+**What you can do:**
+
+- **Save placement** stores the current circuit exactly where you have it — its
+  position, rotation and scale.
+- **Reopen the app** (or switch back to that circuit from the picker) and it is
+  right where you left it — the map even pans to it. No list to dig through: one
+  saved placement per circuit.
+- **Preview saved** — after you have nudged things around, tick this to see the
+  saved version laid over the map as a dashed outline, so you can compare before
+  deciding. Untick to go back to what you were doing.
+- **Revert to saved** throws away the current changes and snaps back to the
+  saved placement.
+- **Delete saved** forgets it (after a confirmation), and **Save placement**
+  over an existing one asks before replacing it.
+
+Everything stays in your browser — nothing is uploaded, and there are no
+accounts. If your browser blocks local storage (private windows, some
+settings), the tool still works for the session; it just will not remember
+between visits.
+
+Moving a saved placement to another computer as a file is still to come.
+
+---
+
 ## 0.4.0 — See where the circuit meets the streets (2026-09-10)
 
 **The overlay now tells you how runnable a placement looks.** As you drag or

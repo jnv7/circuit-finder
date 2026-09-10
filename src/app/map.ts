@@ -12,7 +12,17 @@ import { overlayLatLngs, readout } from './overlay'
 import { LEVELS, lapProximity, proximityColor, quantize } from './proximity'
 import { bearingFromDrag, handlePixel } from './rotate'
 import type { AppState } from './state'
-import { initialState, moveTo, rotateTo, selectCircuit, setScale } from './state'
+import { initialState, loadPlacement, moveTo, rotateTo, selectCircuit, setScale } from './state'
+import {
+  getPlacement,
+  makeSavedPlacement,
+  placementsEqual,
+  removePlacement,
+  savedToPlacement,
+  setPlacement,
+} from '../placements'
+import type { SavedPlacement } from '../placements'
+import { loadPlacements, savePlacements } from './storage'
 import { bind, renderControls, updateReadout } from '../ui/controls'
 
 export { PORTO_CENTER, PORTO_ZOOM }
@@ -64,7 +74,19 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     interactive: false,
   }).addTo(map)
 
+  // Saved placements: one per circuit, from localStorage. The in-memory store
+  // stays authoritative for the session even if a write fails.
+  let placements = loadPlacements()
+  let previewingSaved = false
+
   let state: AppState = initialState(circuits, PORTO_CENTER)
+  {
+    const saved = getPlacement(placements, state.circuitId)
+    if (saved) {
+      state = loadPlacement(state, circuits, saved.circuitId, savedToPlacement(saved))
+      map.setView(toLatLng(state.placement.anchor))
+    }
+  }
   let showStreets = true
   let rotating = false
 
@@ -91,9 +113,20 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     zIndexOffset: 1000,
   }).addTo(map)
 
+  const savedForCurrent = (): SavedPlacement | undefined =>
+    getPlacement(placements, state.circuitId)
+  const hasUnsavedChanges = (): boolean => {
+    const saved = savedForCurrent()
+    return !saved || !placementsEqual(state.placement, savedToPlacement(saved))
+  }
+
   function render({ repositionHandle = true }: { repositionHandle?: boolean } = {}): void {
     const circuit = circuitById(state.circuitId)
-    const ringLonLat = overlayLatLngs(circuit, state.placement)
+    const saved = savedForCurrent()
+    const preview = previewingSaved && saved !== undefined
+    const shown = preview ? savedToPlacement(saved!) : state.placement
+
+    const ringLonLat = overlayLatLngs(circuit, shown)
     const ring = ringLonLat.map(toLatLng)
 
     const closed = ring.length > 0 ? [...ring, ring[0]!] : ring
@@ -108,8 +141,16 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       const q = quantize(segments[i]!.coverage)
       perBucket[q]!.push([ring[i]!, ring[(i + 1) % ring.length]!])
     }
-    for (let q = 0; q < LEVELS; q++) buckets[q]!.setLatLngs(perBucket[q]!)
+    for (let q = 0; q < LEVELS; q++) {
+      buckets[q]!.setLatLngs(perBucket[q]!)
+      buckets[q]!.setStyle(preview ? { dashArray: '5 6', opacity: 0.55 } : { dashArray: undefined, opacity: 0.9 })
+    }
 
+    // While previewing the saved placement the handle is inert and hidden, and
+    // the live anchor/rotation still drive it so nothing jumps on toggle-off.
+    handle.setOpacity(preview ? 0 : 1)
+    if (preview) handle.dragging?.disable()
+    else handle.dragging?.enable()
     if (repositionHandle) {
       const centerPx = map.latLngToContainerPoint(toLatLng(state.placement.anchor))
       const hp = handlePixel(
@@ -120,7 +161,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       handle.setLatLng(map.containerPointToLatLng(L.point(hp[0], hp[1])))
     }
 
-    const { lapM, straightM } = readout(circuit, state.placement.scale)
+    const { lapM, straightM } = readout(circuit, shown.scale)
     updateReadout(panelEl, { lapM, straightM, nearFraction })
   }
 
@@ -140,27 +181,79 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   }
 
   function renderPanel(): void {
+    const saved = savedForCurrent() ?? null
     panelEl.innerHTML = renderControls({
       circuits,
       selectedId: state.circuitId,
       scale: state.placement.scale,
       showStreets,
+      saved,
+      hasUnsavedChanges: hasUnsavedChanges(),
+      previewingSaved,
     })
     disposeControls?.()
     disposeControls = bind(panelEl, {
       onSelectCircuit(id) {
         state = selectCircuit(state, circuits, id)
+        previewingSaved = false
+        const s = getPlacement(placements, id)
+        if (s) {
+          state = loadPlacement(state, circuits, s.circuitId, savedToPlacement(s))
+          map.setView(toLatLng(state.placement.anchor))
+        }
         renderPanel()
         render()
       },
       onScaleChange(scale) {
         state = setScale(state, scale)
+        previewingSaved = false
         render()
       },
       onToggleStreets(show) {
         showStreets = show
         if (show) streetLayer.addTo(map)
         else streetLayer.remove()
+      },
+      onSave() {
+        const existing = savedForCurrent()
+        if (
+          existing &&
+          hasUnsavedChanges() &&
+          !window.confirm(`Replace the saved placement for ${circuitById(state.circuitId).name}?`)
+        ) {
+          return
+        }
+        placements = setPlacement(
+          placements,
+          makeSavedPlacement(state.circuitId, state.placement, new Date()),
+        )
+        savePlacements(placements)
+        previewingSaved = false
+        renderPanel()
+      },
+      onRevertToSaved() {
+        const saved = savedForCurrent()
+        if (!saved) return
+        state = loadPlacement(state, circuits, saved.circuitId, savedToPlacement(saved))
+        previewingSaved = false
+        map.setView(toLatLng(state.placement.anchor))
+        renderPanel()
+        render()
+      },
+      onDeleteSaved() {
+        if (!savedForCurrent()) return
+        if (!window.confirm(`Delete the saved placement for ${circuitById(state.circuitId).name}?`)) {
+          return
+        }
+        placements = removePlacement(placements, state.circuitId)
+        savePlacements(placements)
+        previewingSaved = false
+        renderPanel()
+        render()
+      },
+      onTogglePreviewSaved(show) {
+        previewingSaved = show && savedForCurrent() !== undefined
+        render()
       },
     })
   }
@@ -173,6 +266,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   let moveFrom: { pointer: L.LatLng; anchor: LonLat } | null = null
 
   const onOverlayDown = (e: L.LeafletMouseEvent): void => {
+    if (previewingSaved) return // the previewed ring is not draggable
     moveFrom = { pointer: e.latlng, anchor: state.placement.anchor }
     map.dragging.disable()
     L.DomEvent.stop(e)
@@ -188,6 +282,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     if (!moveFrom) return
     moveFrom = null
     map.dragging.enable()
+    renderPanel() // refresh the saved-placement indicator now the move has settled
   }
   dragTarget.on('mousedown', onOverlayDown)
   map.on('mousemove', onMapMove)
@@ -204,6 +299,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   const onHandleUp = (): void => {
     rotating = false
     scheduleRender()
+    renderPanel()
   }
   handle.on('drag', onHandleDrag)
   handle.on('dragend', onHandleUp)

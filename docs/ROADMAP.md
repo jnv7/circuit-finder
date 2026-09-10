@@ -6,9 +6,9 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 4 — Save / restore / export.** Spec:
-[specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.md).
-Not started.
+**Phase 5 — Trace & study.** Not started; no spec yet. Trace a route along real
+streets under the overlay, show its real length and deviation from the circuit
+shape, and give a clean printable/screenshot view for memorising it.
 
 ## Phases
 
@@ -63,17 +63,18 @@ Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
   street. A hint, not a verdict; the user still judges the fit.
 - No automatic placement or search (that stays Phase 6+).
 
-### Phase 4 — Save / restore / export — `todo`
+### Phase 4 — Save & restore a placement — `done`
 
 Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.md).
 
-- Save an *attempt* (`circuitId` + Phase 2 `Placement` + name/notes/timestamps)
-  to `localStorage` under one key.
-- List saved attempts; load one back onto the map (pans to it). Rename / edit
-  notes / delete.
-- Export an attempt as a self-identifying versioned JSON file; import one back as
-  a copy.
-- Two or three bundled, load-only example attempts.
+- Save the current placement (`circuitId` + Phase 2 `Placement` + `savedAt`) to
+  `localStorage` under one key — **one saved placement per circuit**, keyed by
+  `circuitId`.
+- Auto-restore: opening the app, or picking a circuit, loads that circuit's
+  saved placement (and pans to it) if one exists.
+- Preview the saved placement against the live one before overwriting; revert to
+  it; delete it. Save over an existing entry asks first.
+- No attempt list, names, notes, examples, or file export/import (all Phase 6+).
 
 ### Phase 5 — Trace & study — `todo`
 
@@ -83,6 +84,11 @@ Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.m
 
 ### Phase 6+ — Roadmap / not scheduled
 
+- A saved-placement "repository": more than one saved attempt per circuit, with
+  names, notes, and a list to load from (Phase 4 ships one per circuit only).
+- File export/import of a saved placement — a self-identifying versioned JSON
+  wrapper, import-as-copy — for hand-carrying a placement between machines
+  (dropped from Phase 4).
 - Free the map: any location, pan/zoom, place search.
 - Street network beyond the bundled Porto box: either a larger bundled asset or
   an on-demand "load streets for this area" button that fetches Overpass for the
@@ -99,7 +105,42 @@ Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.m
 
 Newest first. Each entry dated.
 
-- **2026-09-10 — Phase 4 spec written.** Save/restore/export. Decisions locked:
+- **2026-09-10 — Phase 4 shipped.** Save & restore a placement, one per circuit.
+  The current placement is saved with **Save placement** into the single
+  `localStorage` key `circuit-finder/placements` (a `{ [circuitId]: SavedPlacement }`
+  object; a `SavedPlacement` is the Phase 2 `Placement` + `circuitId` +
+  `schemaVersion: 1` + `savedAt`). It is **auto-restored** when the app opens on
+  that circuit or the user picks it from the selector (the map pans to it).
+  Saving over an existing entry with unsaved changes asks first; **Preview saved**
+  draws the stored ring dashed and inert for comparison without touching state;
+  **Revert to saved** and **Delete saved** (both confirmed) round it out. New
+  pure `src/placements.ts` (validate / make / (de)serialise / store ops, tolerant
+  parse) + `src/app/storage.ts` glue (degrades to a non-persistent session if
+  `localStorage` throws) + a `loadPlacement` reducer in `src/app/state.ts` that
+  takes an already-decoded `Placement` so `state` keeps no dependency on
+  `placements` (would otherwise be a cycle via `MIN_SCALE`/`MAX_SCALE`). No new
+  data files, no new dependency. 144 tests pass. A multi-attempt repository and
+  file export/import stay ROADMAP Phase 6+.
+
+- **2026-09-10 — Phase 4 scope narrowed and spec rewritten.** Dropped the named
+  attempt library (list, rename, notes, bundled examples) and file
+  export/import. Phase 4 is now: **one saved placement per circuit**, keyed by
+  `circuitId`, in the single `localStorage` key `circuit-finder/placements` (a
+  JSON object `{ [circuitId]: SavedPlacement }`, tolerant of corrupt/absent
+  values and of `localStorage` being unavailable). A `SavedPlacement` is the
+  Phase 2 `Placement` + `circuitId` + `schemaVersion` + `savedAt`. The saved
+  placement is **auto-restored** when the app opens on that circuit or the user
+  picks it from the selector (map pans to it). Save always overwrites the
+  circuit's entry (confirm first if it exists and there are unsaved changes); a
+  **Preview saved** toggle draws the saved ring dashed for comparison without
+  touching state; **Revert to saved** and **Delete saved** round it out. New
+  pure `src/placements.ts` + `src/app/storage.ts` glue + a `loadPlacement`
+  reducer; no new data files, no new dependency. A multi-attempt repository and
+  file export/import move to ROADMAP Phase 6+. Full spec:
+  `docs/specs/phase-4-save-restore-export.md`.
+
+- **2026-09-10 — Phase 4 spec written (superseded same day, see above).**
+  Save/restore/export. Decisions locked:
   an *attempt* = Phase 2 `Placement` + `circuitId` + `name`/`notes`/timestamps +
   `schemaVersion` (nothing about street data or the proximity result is stored —
   both recompute on load). Persistence is one `localStorage` key

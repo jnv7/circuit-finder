@@ -38,6 +38,32 @@ export function selectCircuit(
   return { ...state, circuitId: id }
 }
 
+/**
+ * Put a saved placement on screen: swap to its circuit and apply its placement
+ * wholesale. Throws if `circuitId` is not a bundled circuit (the caller checks
+ * first and shows a message). The `Placement` is passed in already decoded from
+ * the stored form — `state.ts` stays free of the `placements` module.
+ */
+export function loadPlacement(
+  state: AppState,
+  circuits: readonly MetricCircuit[],
+  circuitId: string,
+  placement: Placement,
+): AppState {
+  if (!circuits.some((c) => c.id === circuitId)) {
+    throw new Error(`loadPlacement: unknown circuit id "${circuitId}"`)
+  }
+  return {
+    ...state,
+    circuitId,
+    placement: {
+      anchor: [placement.anchor[0], placement.anchor[1]],
+      rotationRad: placement.rotationRad,
+      scale: placement.scale,
+    },
+  }
+}
+
 export function moveTo(state: AppState, anchor: LonLat): AppState {
   return { ...state, placement: { ...state.placement, anchor } }
 }

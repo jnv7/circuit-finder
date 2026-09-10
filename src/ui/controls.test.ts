@@ -2,7 +2,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
 import { formatDistance, readout } from '../app/overlay'
-import { bind, renderControls, updateReadout } from './controls'
+import { makeSavedPlacement } from '../placements'
+import { bind, formatSavedAgo, renderControls, updateReadout } from './controls'
 
 const circuits = loadMetricCircuits()
 const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
@@ -10,7 +11,25 @@ const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
   selectedId: circuits[0]!.id,
   scale: 1,
   showStreets: true,
+  saved: null,
+  hasUnsavedChanges: true,
+  previewingSaved: false,
   ...over,
+})
+
+const savedFor = (id: string, savedAt: string) => ({
+  ...makeSavedPlacement(id, { anchor: [-8.61, 41.15], rotationRad: 0.2, scale: 1.5 }, new Date()),
+  savedAt,
+})
+
+const noopHandlers = () => ({
+  onSelectCircuit: vi.fn(),
+  onScaleChange: vi.fn(),
+  onToggleStreets: vi.fn(),
+  onSave: vi.fn(),
+  onRevertToSaved: vi.fn(),
+  onDeleteSaved: vi.fn(),
+  onTogglePreviewSaved: vi.fn(),
 })
 
 describe('renderControls', () => {
@@ -47,33 +66,112 @@ describe('renderControls', () => {
   })
 })
 
+describe('renderControls — saved placement section', () => {
+  it('always shows a Save button', () => {
+    expect(renderControls(view())).toContain('data-role="save"')
+  })
+
+  it('says "Not saved yet" and hides revert/delete/preview when nothing is saved', () => {
+    const html = renderControls(view({ saved: null }))
+    expect(html).toContain('Not saved yet')
+    expect(html).not.toContain('data-role="revert"')
+    expect(html).not.toContain('data-role="delete-saved"')
+    expect(html).not.toContain('data-role="preview-saved"')
+  })
+
+  it('shows the saved age plus revert and delete when a placement is saved', () => {
+    const now = new Date('2026-09-10T12:00:00.000Z')
+    const html = renderControls(
+      view({
+        saved: savedFor(circuits[0]!.id, '2026-09-10T11:58:00.000Z'),
+        now,
+      }),
+    )
+    expect(html).toContain('Saved 2 min ago')
+    expect(html).toContain('data-role="revert"')
+    expect(html).toContain('data-role="delete-saved"')
+  })
+
+  it('shows the preview toggle only with unsaved changes', () => {
+    const saved = savedFor(circuits[0]!.id, '2026-09-10T11:58:00.000Z')
+    expect(renderControls(view({ saved, hasUnsavedChanges: true }))).toContain(
+      'data-role="preview-saved"',
+    )
+    expect(renderControls(view({ saved, hasUnsavedChanges: false }))).not.toContain(
+      'data-role="preview-saved"',
+    )
+  })
+
+  it('checks the preview toggle when previewingSaved is on', () => {
+    const saved = savedFor(circuits[0]!.id, '2026-09-10T11:58:00.000Z')
+    const html = renderControls(view({ saved, hasUnsavedChanges: true, previewingSaved: true }))
+    expect(html).toMatch(/data-role="preview-saved"[^>]*checked/)
+  })
+})
+
+describe('formatSavedAgo', () => {
+  const now = new Date('2026-09-10T12:00:00.000Z')
+  it.each([
+    ['2026-09-10T11:59:30.000Z', 'just now'],
+    ['2026-09-10T11:45:00.000Z', '15 min ago'],
+    ['2026-09-10T09:00:00.000Z', '3 h ago'],
+    ['2026-09-08T12:00:00.000Z', '2 d ago'],
+    ['2026-08-20T12:00:00.000Z', 'on 2026-08-20'],
+  ])('%s → %s', (savedAt, expected) => {
+    expect(formatSavedAgo(savedAt, now)).toBe(expected)
+  })
+})
+
 describe('bind', () => {
   it('calls the handlers on change', () => {
     const root = document.createElement('div')
     root.innerHTML = renderControls(view())
-    const onSelectCircuit = vi.fn()
-    const onScaleChange = vi.fn()
-    const onToggleStreets = vi.fn()
-    const dispose = bind(root, { onSelectCircuit, onScaleChange, onToggleStreets })
+    const handlers = noopHandlers()
+    const dispose = bind(root, handlers)
 
     const select = root.querySelector<HTMLSelectElement>('[data-role="circuit"]')!
     select.value = circuits[2]!.id
     select.dispatchEvent(new Event('change'))
-    expect(onSelectCircuit).toHaveBeenCalledWith(circuits[2]!.id)
+    expect(handlers.onSelectCircuit).toHaveBeenCalledWith(circuits[2]!.id)
 
     const scale = root.querySelector<HTMLInputElement>('[data-role="scale"]')!
     scale.value = '1.5'
     scale.dispatchEvent(new Event('change'))
-    expect(onScaleChange).toHaveBeenCalledWith(1.5)
+    expect(handlers.onScaleChange).toHaveBeenCalledWith(1.5)
 
     const streets = root.querySelector<HTMLInputElement>('[data-role="streets"]')!
     streets.checked = false
     streets.dispatchEvent(new Event('change'))
-    expect(onToggleStreets).toHaveBeenCalledWith(false)
+    expect(handlers.onToggleStreets).toHaveBeenCalledWith(false)
+
+    root.querySelector<HTMLButtonElement>('[data-role="save"]')!.dispatchEvent(new Event('click'))
+    expect(handlers.onSave).toHaveBeenCalledTimes(1)
 
     dispose()
     select.dispatchEvent(new Event('change'))
-    expect(onSelectCircuit).toHaveBeenCalledTimes(1)
+    expect(handlers.onSelectCircuit).toHaveBeenCalledTimes(1)
+  })
+
+  it('wires revert, delete and the preview toggle when a placement is saved', () => {
+    const root = document.createElement('div')
+    root.innerHTML = renderControls(
+      view({ saved: savedFor(circuits[0]!.id, new Date().toISOString()), hasUnsavedChanges: true }),
+    )
+    const handlers = noopHandlers()
+    bind(root, handlers)
+
+    root.querySelector<HTMLButtonElement>('[data-role="revert"]')!.dispatchEvent(new Event('click'))
+    expect(handlers.onRevertToSaved).toHaveBeenCalledTimes(1)
+
+    root
+      .querySelector<HTMLButtonElement>('[data-role="delete-saved"]')!
+      .dispatchEvent(new Event('click'))
+    expect(handlers.onDeleteSaved).toHaveBeenCalledTimes(1)
+
+    const preview = root.querySelector<HTMLInputElement>('[data-role="preview-saved"]')!
+    preview.checked = true
+    preview.dispatchEvent(new Event('change'))
+    expect(handlers.onTogglePreviewSaved).toHaveBeenCalledWith(true)
   })
 })
 

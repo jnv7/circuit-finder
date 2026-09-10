@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
 import {
   initialState,
+  loadPlacement,
   moveTo,
   rotateTo,
   selectCircuit,
@@ -54,5 +55,18 @@ describe('reducers', () => {
     expect(setScale(base, 1.7).placement.scale).toBe(1.7)
     expect(setScale(base, 0.1).placement.scale).toBe(0.5)
     expect(setScale(base, 99).placement.scale).toBe(3)
+  })
+
+  it('loadPlacement swaps the circuit and applies the placement', () => {
+    const placement = { anchor: [-8.5, 41.2] as const, rotationRad: 1.1, scale: 2 }
+    const next = loadPlacement(base, circuits, circuits[2]!.id, placement)
+    expect(next.circuitId).toBe(circuits[2]!.id)
+    expect(next.placement).toEqual(placement)
+    expect(next.placement.anchor).not.toBe(placement.anchor)
+  })
+
+  it('loadPlacement throws on an unknown circuit', () => {
+    const placement = { anchor: [0, 0] as const, rotationRad: 0, scale: 1 }
+    expect(() => loadPlacement(base, circuits, 'nope', placement)).toThrow(/unknown circuit/)
   })
 })
