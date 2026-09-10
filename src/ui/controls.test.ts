@@ -8,11 +8,24 @@ import {
   formatDeviation,
   formatRouteLength,
   formatSavedAgo,
+  formatSuggestionLabel,
   renderControls,
   updateReadout,
 } from './controls'
 
 const circuits = loadMetricCircuits()
+const idleSuggest = {
+  phase: 'idle' as const,
+  suggestions: [] as const,
+  selectedIndex: null,
+}
+const sampleSuggestion = (over: Record<string, unknown> = {}) => ({
+  placement: { anchor: [-8.61, 41.15] as [number, number], rotationRad: 0.1, scale: 1 },
+  coverageFraction: 0.78,
+  meanDeviationM: 24,
+  maxDeviationM: 61,
+  ...over,
+})
 const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
   circuits,
   selectedId: circuits[0]!.id,
@@ -26,6 +39,7 @@ const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
   routePointCount: 0,
   routeStats: null,
   circuitLengthM: 4000,
+  suggest: idleSuggest,
   ...over,
 })
 
@@ -48,6 +62,11 @@ const noopHandlers = () => ({
   onUndoRoutePoint: vi.fn(),
   onClearRoute: vi.fn(),
   onToggleStudyView: vi.fn(),
+  onSuggest: vi.fn(),
+  onCancelSuggest: vi.fn(),
+  onUseSuggestion: vi.fn(),
+  onPreviewSuggestion: vi.fn(),
+  onClearSuggestions: vi.fn(),
 })
 
 describe('renderControls', () => {
@@ -283,6 +302,115 @@ describe('renderControls — study view', () => {
     expect(html).toContain('data-role="route-length"')
     expect(html).not.toContain('data-role="circuit"')
     expect(html).not.toContain('data-role="save"')
+  })
+})
+
+describe('renderControls — suggest placements section', () => {
+  it('idle: renders the opt-in button, disabled while tracing or previewing', () => {
+    expect(renderControls(view())).toMatch(/data-role="suggest"(?![^>]*disabled)/)
+    expect(renderControls(view({ tracing: true }))).toMatch(/data-role="suggest"[^>]*disabled/)
+    expect(renderControls(view({ previewingSaved: true }))).toMatch(
+      /data-role="suggest"[^>]*disabled/,
+    )
+  })
+
+  it('running: renders a progress bar bound to progress and a cancel button', () => {
+    const html = renderControls(
+      view({
+        suggest: {
+          phase: 'running',
+          progress: { done: 3, total: 8 },
+          suggestions: [],
+          selectedIndex: null,
+        },
+      }),
+    )
+    expect(html).toMatch(/data-role="suggest-progress"[^>]*value="3"[^>]*max="8"/)
+    expect(html).toContain('data-role="suggest-cancel"')
+    expect(html).not.toContain('data-role="suggest"')
+  })
+
+  it('results: one row per suggestion with the coverage label, use and clear buttons', () => {
+    const suggestions = [sampleSuggestion(), sampleSuggestion({ coverageFraction: 0.5 })]
+    const html = renderControls(
+      view({ suggest: { phase: 'results', suggestions, selectedIndex: 1 } }),
+    )
+    expect(html).toContain('data-role="suggest-list"')
+    expect(html).toContain(formatSuggestionLabel(suggestions[0]!))
+    expect((html.match(/data-role="suggest-use"/g) ?? []).length).toBe(2)
+    expect(html).toContain('data-suggest-index="1"')
+    expect(html).toContain('suggest__row--selected')
+    expect(html).toContain('data-role="suggest-clear"')
+  })
+
+  it('results: shows an empty note when the search found nothing', () => {
+    const html = renderControls(
+      view({ suggest: { phase: 'results', suggestions: [], selectedIndex: null } }),
+    )
+    expect(html).toContain('data-role="suggest-clear"')
+    expect(html).not.toContain('data-role="suggest-list"')
+    expect(html).toContain('suggest__empty')
+  })
+})
+
+describe('formatSuggestionLabel', () => {
+  it('shows a rounded percentage and average deviation', () => {
+    expect(
+      formatSuggestionLabel({
+        placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
+        coverageFraction: 0.734,
+        meanDeviationM: 18.6,
+        maxDeviationM: 40,
+      }),
+    ).toBe('73% on streets · ~19 m avg')
+  })
+})
+
+describe('bind — suggest section', () => {
+  it('wires the button, cancel, clear, per-row use and hover preview', () => {
+    const suggestions = [sampleSuggestion(), sampleSuggestion()]
+
+    const idle = document.createElement('div')
+    idle.innerHTML = renderControls(view())
+    const h1 = noopHandlers()
+    bind(idle, h1)
+    idle.querySelector<HTMLButtonElement>('[data-role="suggest"]')!.dispatchEvent(new Event('click'))
+    expect(h1.onSuggest).toHaveBeenCalledTimes(1)
+
+    const running = document.createElement('div')
+    running.innerHTML = renderControls(
+      view({
+        suggest: { phase: 'running', progress: { done: 1, total: 2 }, suggestions: [], selectedIndex: null },
+      }),
+    )
+    const h2 = noopHandlers()
+    bind(running, h2)
+    running
+      .querySelector<HTMLButtonElement>('[data-role="suggest-cancel"]')!
+      .dispatchEvent(new Event('click'))
+    expect(h2.onCancelSuggest).toHaveBeenCalledTimes(1)
+
+    const results = document.createElement('div')
+    results.innerHTML = renderControls(
+      view({ suggest: { phase: 'results', suggestions, selectedIndex: null } }),
+    )
+    const h3 = noopHandlers()
+    bind(results, h3)
+
+    const useButtons = results.querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')
+    useButtons[1]!.dispatchEvent(new Event('click'))
+    expect(h3.onUseSuggestion).toHaveBeenCalledWith(1)
+
+    const rows = results.querySelectorAll<HTMLLIElement>('li[data-suggest-index]')
+    rows[0]!.dispatchEvent(new Event('mouseenter'))
+    expect(h3.onPreviewSuggestion).toHaveBeenCalledWith(0)
+    results.querySelector('[data-role="suggest-list"]')!.dispatchEvent(new Event('mouseleave'))
+    expect(h3.onPreviewSuggestion).toHaveBeenCalledWith(null)
+
+    results
+      .querySelector<HTMLButtonElement>('[data-role="suggest-clear"]')!
+      .dispatchEvent(new Event('click'))
+    expect(h3.onClearSuggestions).toHaveBeenCalledTimes(1)
   })
 })
 

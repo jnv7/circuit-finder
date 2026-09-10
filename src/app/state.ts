@@ -87,6 +87,24 @@ export function clearRoute(state: AppState): AppState {
   return { ...state, route: [] }
 }
 
+/**
+ * Drop the circuit onto a given placement (a Phase 6 suggestion, or any future
+ * "jump to a placement" need): replace `state.placement` with a fresh copy and
+ * clear the traced route, which belonged to the old placement. The circuit is
+ * unchanged. Pure.
+ */
+export function applyPlacement(state: AppState, placement: Placement): AppState {
+  return {
+    ...state,
+    placement: {
+      anchor: [placement.anchor[0], placement.anchor[1]],
+      rotationRad: placement.rotationRad,
+      scale: placement.scale,
+    },
+    route: [],
+  }
+}
+
 export function moveTo(state: AppState, anchor: LonLat): AppState {
   return { ...state, placement: { ...state.placement, anchor } }
 }

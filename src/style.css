@@ -158,6 +158,76 @@ body,
   font-style: italic;
 }
 
+.controls .suggest {
+  display: grid;
+  gap: 8px;
+}
+
+.controls .suggest > button,
+.controls .suggest__list button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  background: #fff;
+  cursor: pointer;
+}
+
+.controls .suggest > button:hover,
+.controls .suggest__list button:hover {
+  background: #f0f0f0;
+}
+
+.controls .suggest > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.controls .suggest progress {
+  width: 100%;
+}
+
+.controls .suggest__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  counter-reset: suggestion;
+}
+
+.controls .suggest__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.controls .suggest__list li::before {
+  counter-increment: suggestion;
+  content: counter(suggestion) ".";
+  color: #777;
+  font-variant-numeric: tabular-nums;
+}
+
+.controls .suggest__list .suggest__label {
+  flex: 1;
+}
+
+.controls .suggest__row--selected {
+  background: rgba(225, 6, 0, 0.1);
+}
+
+.controls .suggest__empty {
+  margin: 0;
+  font-size: 12px;
+  color: #555;
+}
+
 .controls.study-summary {
   gap: 12px;
 }

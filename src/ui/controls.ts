@@ -4,6 +4,7 @@
 import type { MetricCircuit } from '../circuits'
 import type { SavedPlacement } from '../placements'
 import type { RouteStats } from '../app/trace'
+import type { SearchProgress, Suggestion } from '../match/types'
 import { formatDistance, readout } from '../app/overlay'
 import { proximityColor } from '../app/proximity'
 import { MAX_SCALE, MIN_SCALE } from '../app/state'
@@ -29,8 +30,18 @@ export type ControlsView = {
   routeStats: RouteStats | null
   /** Circuit lap length at the current scale, for the route-vs-circuit line. */
   circuitLengthM: number
+  /** Suggested-placements section state (Phase 6). */
+  suggest: SuggestView
   /** Reference time for the "Saved …" relative label. Defaults to now. */
   now?: Date
+}
+
+export type SuggestView = {
+  phase: 'idle' | 'running' | 'results'
+  progress?: SearchProgress
+  suggestions: readonly Suggestion[]
+  /** The row currently previewed on the map, if any. */
+  selectedIndex: number | null
 }
 
 export type ControlsHandlers = {
@@ -45,6 +56,11 @@ export type ControlsHandlers = {
   onUndoRoutePoint(): void
   onClearRoute(): void
   onToggleStudyView(): void
+  onSuggest(): void
+  onCancelSuggest(): void
+  onUseSuggestion(index: number): void
+  onPreviewSuggestion(index: number | null): void
+  onClearSuggestions(): void
 }
 
 export type ReadoutValues = {
@@ -66,6 +82,12 @@ export function formatRouteLength(stats: RouteStats, circuitLengthM: number): st
 /** "~45 m avg · 160 m max". Pure. */
 export function formatDeviation(stats: RouteStats): string {
   return `~${Math.round(stats.meanDeviationM)} m avg · ${Math.round(stats.maxDeviationM)} m max`
+}
+
+/** "78% on streets · ~24 m avg" — the label for one suggestion row. Pure. */
+export function formatSuggestionLabel(s: Suggestion): string {
+  const pct = Math.round(Math.max(0, Math.min(1, s.coverageFraction)) * 100)
+  return `${pct}% on streets · ~${Math.round(s.meanDeviationM)} m avg`
 }
 
 function escapeHtml(value: string): string {
@@ -129,6 +151,7 @@ export function renderControls(view: ControlsView): string {
         <span>Circuit</span>
         <select data-role="circuit">${options}</select>
       </label>
+      ${renderSuggestSection(view)}
       <label class="control">
         <span>Scale ×</span>
         <input
@@ -191,6 +214,53 @@ function renderRouteSection(view: ControlsView): string {
       ${tracingControls}
       ${routeStatsRows(view)}
       ${view.routeStats ? '<button type="button" data-role="study">Study view</button>' : ''}
+    </div>
+  `
+}
+
+/** The "Suggest placements" block: an opt-in button, then a cancellable
+ *  progress bar while the search runs, then a ranked list of starting spots
+ *  (hover a row to preview it, "Use this" to drop the circuit there). */
+function renderSuggestSection(view: ControlsView): string {
+  const { suggest } = view
+
+  if (suggest.phase === 'running') {
+    const p = suggest.progress ?? { done: 0, total: 1 }
+    return `
+      <div class="suggest" data-role="suggest-panel">
+        <progress data-role="suggest-progress" value="${p.done}" max="${p.total}"></progress>
+        <button type="button" data-role="suggest-cancel">Cancel</button>
+      </div>
+    `
+  }
+
+  if (suggest.phase === 'results') {
+    const rows = suggest.suggestions
+      .map((s, i) => {
+        const selected = suggest.selectedIndex === i ? ' class="suggest__row--selected"' : ''
+        return (
+          `<li data-suggest-index="${i}"${selected}>` +
+          `<span class="suggest__label">${escapeHtml(formatSuggestionLabel(s))}</span>` +
+          `<button type="button" data-role="suggest-use" data-suggest-index="${i}">Use this</button>` +
+          `</li>`
+        )
+      })
+      .join('')
+    const body = suggest.suggestions.length
+      ? `<ol class="suggest__list" data-role="suggest-list">${rows}</ol>`
+      : '<p class="suggest__empty">No spots found on Porto streets.</p>'
+    return `
+      <div class="suggest" data-role="suggest-panel">
+        ${body}
+        <button type="button" data-role="suggest-clear">Dismiss</button>
+      </div>
+    `
+  }
+
+  const disabled = view.previewingSaved || view.tracing ? ' disabled' : ''
+  return `
+    <div class="suggest" data-role="suggest-panel">
+      <button type="button" data-role="suggest"${disabled}>Suggest placements</button>
     </div>
   `
 }
@@ -279,7 +349,37 @@ export function bind(root: ParentNode, handlers: ControlsHandlers): () => void {
     [btn('clear-route'), handlers.onClearRoute],
     [btn('study'), handlers.onToggleStudyView],
     [btn('study-exit'), handlers.onToggleStudyView],
+    [btn('suggest'), handlers.onSuggest],
+    [btn('suggest-cancel'), handlers.onCancelSuggest],
+    [btn('suggest-clear'), handlers.onClearSuggestions],
   ]
+
+  // Suggestion rows: "Use this" per row, and hover / focus to preview it.
+  const suggestList = root.querySelector<HTMLElement>('[data-role="suggest-list"]')
+  const rowEls = [...root.querySelectorAll<HTMLLIElement>('li[data-suggest-index]')]
+  const useEls = [...root.querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')]
+  const rowDisposers: Array<() => void> = []
+  for (const el of useEls) {
+    const i = Number(el.dataset['suggestIndex'])
+    const fn = (): void => handlers.onUseSuggestion(i)
+    el.addEventListener('click', fn)
+    rowDisposers.push(() => el.removeEventListener('click', fn))
+  }
+  for (const el of rowEls) {
+    const i = Number(el.dataset['suggestIndex'])
+    const enter = (): void => handlers.onPreviewSuggestion(i)
+    el.addEventListener('mouseenter', enter)
+    el.addEventListener('focusin', enter)
+    rowDisposers.push(() => {
+      el.removeEventListener('mouseenter', enter)
+      el.removeEventListener('focusin', enter)
+    })
+  }
+  if (suggestList) {
+    const leave = (): void => handlers.onPreviewSuggestion(null)
+    suggestList.addEventListener('mouseleave', leave)
+    rowDisposers.push(() => suggestList.removeEventListener('mouseleave', leave))
+  }
 
   const onSelect = (): void => {
     if (select) handlers.onSelectCircuit(select.value)
@@ -311,5 +411,6 @@ export function bind(root: ParentNode, handlers: ControlsHandlers): () => void {
     streets?.removeEventListener('change', onStreets)
     preview?.removeEventListener('change', onPreview)
     for (const [el, fn] of clicks) el?.removeEventListener('click', fn)
+    for (const dispose of rowDisposers) dispose()
   }
 }

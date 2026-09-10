@@ -6,13 +6,13 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 6 — Suggested placements.** Spec:
-[specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements.md).
-Not started. Opt-in "Suggest placements": search the bundled Porto street
-network for spots where the chosen circuit's shape sits well on real streets and
-offer the best few as ranked, hand-tunable starting points. Geometry-only
-(coverage + turning-function + Procrustes); no routable graph, no Overpass,
-fixed scale. The routable-loop and beyond-Porto work stays in the Later list.
+**Choosing the next phase.** Phases 0–6 are `done` — the acetate workflow now
+covers overlay, street-proximity feedback, save/restore, trace & study, and
+opt-in suggested placements. Nothing is scheduled next; the candidates are in
+the *Later* list below. The natural follow-on is **a routable street graph**
+(connectivity built from the bundled geometry): it turns Phase 6's geometry
+hint into a real found-loop match and gives snap-to-street for tracing. Needs a
+spec in `docs/specs/` before implementation.
 
 ## Phases
 
@@ -95,7 +95,7 @@ Spec: [specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
 - The route is persisted with its placement (`SavedPlacement` gains an optional
   `route`, `schemaVersion` → 2, v1 records still load).
 
-### Phase 6 — Suggested placements — `todo`
+### Phase 6 — Suggested placements — `done`
 
 Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements.md).
 
@@ -136,6 +136,38 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-10 — Phase 6 shipped.** Suggested placements. An opt-in **Suggest
+  placements** button under the circuit picker runs a coarse→fine translation +
+  rotation sweep (fixed scale) of the chosen circuit over the bundled Porto
+  street index and shows up to five ranked starting spots, each labelled
+  *"NN % on streets · ~NN m avg"*. Hovering a row previews its outline dashed
+  (Phase 4 style, no state change); **Use this** drops the circuit there via a
+  new pure `applyPlacement` reducer (clears the traced route, `window.confirm`
+  first if one exists) and pans to it — still fully draggable. The search is a
+  synchronous generator `searchPlacements` (coarse grid + rotation sweep → keep
+  top N → local refine → de-dupe → top 5); `app/suggest.ts`'s `createSuggester`
+  pumps it in ≤ `SLICE_MS` (12 ms) bursts with a `setTimeout(0)` between them, so
+  the panel shows a live `<progress>` and **Cancel** works — no Web Worker.
+  Per-candidate objective (`match/objective.ts`): Phase 3 **coverage** (drop
+  below `MIN_COVERAGE` 0.45, and short-circuit the shape terms there for speed)
+  − `W_TURNING`·**turning-function distance** (new pure `geometry/turning.ts`)
+  − `W_PROCRUSTES`·**Procrustes residual** of the snapped samples, normalised by
+  the circuit radius (new pure `geometry/procrustes.ts`, closed-form 2-D
+  similarity, no reflection). `StreetIndex` gained `nearestPointM` (and the
+  internal segment scan dropped its per-query `Set`). Turning / Procrustes are
+  ranking-only — no headline match score, keeping *judgement with the user*.
+  **Tuning vs the spec:** the spec's constant table
+  (`COARSE_KEEP 24`, refine `180/60` m & `18/6`°, samples `48/96`) put the
+  real-data search at ~10–13 s; trimmed to `COARSE_KEEP 16`, refine `180/90` m &
+  `18/9`°, samples `40/80`, which still nails a planted optimum and lands the
+  real Porto search at **~3–7 s** on a laptop (sliced, so the UI never blocks).
+  A typed-array index and/or a Web Worker are the noted next optimisation.
+  Weights kept at the spec defaults (`0.15` / `0.20`). New pure
+  `geometry/turning.ts`, `geometry/procrustes.ts`, `match/{types,objective,search}.ts`,
+  `app/suggest.ts`; `applyPlacement` in `app/state.ts`; the "Suggest placements"
+  section + handlers in `ui/controls.ts`; glue in `app/map.ts`. No new data
+  file, no new dependency. 210 tests pass.
 
 - **2026-09-10 — Phase 6 spec written.** Suggested placements — the geometry-only
   first cut of the roadmap's "automatic matching". Decisions locked: **opt-in**

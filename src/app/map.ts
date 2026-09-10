@@ -6,14 +6,17 @@
 import L from 'leaflet'
 import type { MetricCircuit } from '../circuits'
 import type { LonLat } from '../geo'
+import type { Point } from '../geometry/types'
+import { resample } from '../geometry/path'
 import { PORTO_CENTER, PORTO_ZOOM, portoProjection } from '../porto'
 import { buildStreetIndex, loadStreetNetwork } from '../streets'
 import { overlayLatLngs, readout } from './overlay'
-import { LEVELS, lapProximity, proximityColor, quantize } from './proximity'
+import { LEVELS, SAMPLE_M, lapProximity, proximityColor, quantize } from './proximity'
 import { bearingFromDrag, handlePixel } from './rotate'
 import type { AppState } from './state'
 import {
   addRoutePoint,
+  applyPlacement,
   clearRoute,
   initialState,
   loadPlacement,
@@ -23,6 +26,10 @@ import {
   setScale,
   undoRoutePoint,
 } from './state'
+import { createSuggester } from './suggest'
+import type { Suggester } from './suggest'
+import type { SearchInput, Suggestion } from '../match/types'
+import type { SuggestView } from '../ui/controls'
 import {
   getPlacement,
   makeSavedPlacement,
@@ -81,6 +88,14 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   const project = portoProjection()
   const network = loadStreetNetwork()
   const streetIndex = buildStreetIndex(network.ways)
+
+  // The network bbox in Porto-frame metres — the area the Phase 6 search sweeps.
+  const sw = project.toLocal([network.bbox[0], network.bbox[1]])
+  const ne = project.toLocal([network.bbox[2], network.bbox[3]])
+  const searchBBox = {
+    min: [Math.min(sw[0], ne[0]), Math.min(sw[1], ne[1])] as Point,
+    max: [Math.max(sw[0], ne[0]), Math.max(sw[1], ne[1])] as Point,
+  }
   const streetLatLngs: L.LatLngExpression[][] = network.ways.map((way) =>
     way.map((p) => toLatLng(project.toLonLat(p))),
   )
@@ -97,6 +112,18 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   let previewingSaved = false
   let tracing = false
   let studyView = false
+
+  // Phase 6 suggested placements: an opt-in search, its results, and the row
+  // currently hovered (drawn as a dashed preview without touching state).
+  let suggester: Suggester = createSuggester()
+  let suggest: SuggestView = { phase: 'idle', suggestions: [], selectedIndex: null }
+  let previewSuggestion: Suggestion | null = null
+
+  function clearSuggestions(): void {
+    suggester.cancel()
+    suggest = { phase: 'idle', suggestions: [], selectedIndex: null }
+    previewSuggestion = null
+  }
 
   let state: AppState = initialState(circuits, PORTO_CENTER)
   {
@@ -174,8 +201,14 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   function render({ repositionHandle = true }: { repositionHandle?: boolean } = {}): void {
     const circuit = circuitById(state.circuitId)
     const saved = savedForCurrent()
-    const preview = previewingSaved && saved !== undefined
-    const shown = preview ? savedToPlacement(saved!) : state.placement
+    const previewSaved = previewingSaved && saved !== undefined
+    // A hovered suggestion outranks the saved preview; either draws dashed.
+    const shown = previewSuggestion
+      ? previewSuggestion.placement
+      : previewSaved
+        ? savedToPlacement(saved!)
+        : state.placement
+    const preview = previewSaved || previewSuggestion !== null
 
     const ringLonLat = overlayLatLngs(circuit, shown)
     const ring = ringLonLat.map(toLatLng)
@@ -254,6 +287,20 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     container.classList.toggle('circuit-finder--study', studyView)
   }
 
+  // rAF-throttled progress-bar update while a search runs (no full re-render).
+  let suggestFrame: number | null = null
+  function scheduleSuggestProgress(): void {
+    if (suggestFrame !== null) return
+    suggestFrame = requestAnimationFrame(() => {
+      suggestFrame = null
+      const el = panelEl.querySelector<HTMLProgressElement>('[data-role="suggest-progress"]')
+      if (el && suggest.progress) {
+        el.value = suggest.progress.done
+        el.max = suggest.progress.total
+      }
+    })
+  }
+
   // rAF-coalesced re-render: pointer events schedule a frame instead of
   // rendering synchronously.
   let frame: number | null = null
@@ -284,12 +331,14 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       routePointCount: state.route.length,
       routeStats: currentRouteStats(),
       circuitLengthM: circuitLapM(),
+      suggest,
     })
     disposeControls?.()
     disposeControls = bind(panelEl, {
       onSelectCircuit(id) {
         state = selectCircuit(state, circuits, id)
         previewingSaved = false
+        clearSuggestions()
         const s = getPlacement(placements, id)
         if (s) {
           state = loadPlacement(state, circuits, s.circuitId, savedToPlacement(s), savedRoute(s))
@@ -352,11 +401,14 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       },
       onTogglePreviewSaved(show) {
         previewingSaved = show && savedForCurrent() !== undefined
+        if (previewingSaved) clearSuggestions()
+        renderPanel()
         render()
       },
       onToggleTrace() {
         tracing = !tracing
         if (tracing) previewingSaved = false
+        clearSuggestions()
         applyLayerVisibility()
         renderPanel()
         render()
@@ -374,7 +426,78 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       onToggleStudyView() {
         studyView = !studyView
         if (studyView) tracing = false
+        clearSuggestions()
         applyLayerVisibility()
+        renderPanel()
+        render()
+      },
+      onSuggest() {
+        if (suggest.phase === 'running') return
+        const circuit = circuitById(state.circuitId)
+        const input: SearchInput = {
+          circuitSamplesM: resample(circuit.metricCentreline, SAMPLE_M),
+          scale: state.placement.scale,
+          index: streetIndex,
+          bbox: searchBBox,
+        }
+        suggester.cancel()
+        suggester = createSuggester()
+        const active = suggester
+        previewingSaved = false
+        previewSuggestion = null
+        suggest = {
+          phase: 'running',
+          progress: { done: 0, total: 1 },
+          suggestions: [],
+          selectedIndex: null,
+        }
+        renderPanel()
+        render()
+        void active
+          .run(input, (p) => {
+            if (suggester !== active) return
+            suggest = { ...suggest, progress: p }
+            scheduleSuggestProgress()
+          })
+          .then((results) => {
+            if (suggester !== active) return
+            suggest = { phase: 'results', suggestions: results, selectedIndex: null }
+            renderPanel()
+            render()
+          })
+      },
+      onCancelSuggest() {
+        clearSuggestions()
+        renderPanel()
+        render()
+      },
+      onUseSuggestion(index) {
+        const chosen = suggest.suggestions[index]
+        if (!chosen) return
+        if (
+          state.route.length > 0 &&
+          !window.confirm(
+            `Use this suggestion for ${circuitById(state.circuitId).name}? ` +
+              'The traced route will be cleared.',
+          )
+        ) {
+          return
+        }
+        state = applyPlacement(state, chosen.placement)
+        clearSuggestions()
+        previewingSaved = false
+        map.setView(toLatLng(state.placement.anchor))
+        renderPanel()
+        render()
+      },
+      onPreviewSuggestion(index) {
+        if (suggest.phase !== 'results') return
+        previewSuggestion = index === null ? null : suggest.suggestions[index] ?? null
+        suggest = { ...suggest, selectedIndex: index }
+        render()
+      },
+      onClearSuggestions() {
+        clearSuggestions()
         renderPanel()
         render()
       },
@@ -444,8 +567,11 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
 
   return {
     destroy(): void {
+      suggester.cancel()
       if (frame !== null) cancelAnimationFrame(frame)
+      if (suggestFrame !== null) cancelAnimationFrame(suggestFrame)
       frame = null
+      suggestFrame = null
       disposeControls?.()
       dragTarget.off()
       handle.off()

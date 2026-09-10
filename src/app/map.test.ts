@@ -1,10 +1,35 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
 import { makeSavedPlacement } from '../placements'
 import { STORAGE_KEY } from './storage'
 import { LEVELS, proximityColor } from './proximity'
 import { createMapApp } from './map'
+
+// Stub the search generator so the suggest tests are fast and deterministic.
+const STUB_SUGGESTIONS = [
+  {
+    placement: { anchor: [-8.6, 41.165], rotationRad: 0.4, scale: 1 },
+    coverageFraction: 0.82,
+    meanDeviationM: 21,
+    maxDeviationM: 55,
+  },
+  {
+    placement: { anchor: [-8.64, 41.15], rotationRad: -0.3, scale: 1 },
+    coverageFraction: 0.61,
+    meanDeviationM: 38,
+    maxDeviationM: 90,
+  },
+]
+vi.mock('../match/search', () => ({
+  searchPlacements: function* () {
+    yield { done: 1, total: 2 }
+    yield { done: 2, total: 2 }
+    return STUB_SUGGESTIONS
+  },
+}))
+
+const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // Leaflet reads element sizes off the container; jsdom reports 0 for all of
 // them, which is enough for it to build the map and the SVG overlay but we give
@@ -132,6 +157,54 @@ describe('createMapApp — saved placements', () => {
 
     click(container, 'study-exit')
     expect(panel(container).querySelector('[data-role="circuit"]')).not.toBeNull()
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('suggest → results list → use moves the overlay, clear returns to idle', async () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    const paths = () =>
+      [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('d')).join('|')
+    const before = paths()
+
+    click(container, 'suggest')
+    await flush()
+
+    // The panel now shows the ranked list from the stub.
+    expect(panel(container).querySelector('[data-role="suggest-list"]')).not.toBeNull()
+    expect(panel(container).textContent).toContain('82% on streets')
+    const rows = panel(container).querySelectorAll('[data-role="suggest-use"]')
+    expect(rows).toHaveLength(2)
+
+    ;(rows[0] as HTMLButtonElement).dispatchEvent(new Event('click'))
+    await flush()
+
+    // Overlay geometry changed and the panel is back to the idle button.
+    expect(paths()).not.toBe(before)
+    expect(panel(container).querySelector('[data-role="suggest"]')).not.toBeNull()
+    expect(panel(container).querySelector('[data-role="suggest-list"]')).toBeNull()
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('suggest then clear dismisses the list without touching the placement', async () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+    const scaleBefore = panel(container).querySelector<HTMLInputElement>('[data-role="scale"]')!.value
+
+    click(container, 'suggest')
+    await flush()
+    click(container, 'suggest-clear')
+
+    expect(panel(container).querySelector('[data-role="suggest-list"]')).toBeNull()
+    expect(panel(container).querySelector('[data-role="suggest"]')).not.toBeNull()
+    expect(panel(container).querySelector<HTMLInputElement>('[data-role="scale"]')!.value).toBe(
+      scaleBefore,
+    )
 
     app.destroy()
     container.remove()

@@ -8,6 +8,34 @@ Newest release first.
 
 ---
 
+## 0.7.0 — Let the tool suggest where to start (2026-09-10)
+
+**Stop hunting for a starting spot by hand.** Pick a circuit and click
+**Suggest placements**. The tool sweeps the whole Porto street map looking for
+places where that circuit's shape would sit well on real streets, and offers you
+the best few as a short ranked list.
+
+**What you get:**
+
+- A progress bar while it searches (it takes a few seconds), with a **Cancel**
+  button if you change your mind.
+- Up to five suggestions, each labelled the way you already know from the live
+  feedback — **"NN % on streets"** — plus a rough **"~NN m avg"** for how far
+  the shape sits from the streets under it. They're ordered, but there's no
+  winner: picking the third is as fine as picking the first.
+- **Hover a suggestion** to see its outline previewed on the map, dashed, without
+  changing anything.
+- **Use this** drops the circuit onto that spot and pans the map to it. It's a
+  starting point, not an answer — the circuit stays fully draggable, so nudge
+  and rotate it from there as usual. If you'd already traced a route, it asks
+  first, because the route belonged to the old position.
+
+The search only looks inside the bundled Porto area and never goes online.
+Nothing is chosen for you and there's still no "match score" — the tool just
+points at a few spots worth a look.
+
+---
+
 ## 0.6.0 — Trace your route and study it (2026-09-10)
 
 **Draw the run you'd actually do.** With a circuit placed over Porto, click

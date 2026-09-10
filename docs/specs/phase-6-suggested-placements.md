@@ -1,6 +1,7 @@
 # Spec — Phase 6: Suggested placements
 
-Status: `todo`
+Status: `done` (shipped 2026-09-10 — see the ROADMAP decision log for the
+constant tuning and real-data timing)
 Depends on: [phase-2-map-overlay.md](phase-2-map-overlay.md),
 [phase-3-street-proximity.md](phase-3-street-proximity.md),
 [phase-5-trace-and-study.md](phase-5-trace-and-study.md)

@@ -7,7 +7,8 @@ import type { Attribution } from './attribution'
 import { validateAttribution } from './attribution'
 import type { LonLat } from './geo'
 import type { Point } from './geometry/types'
-import { distanceToSegment } from './geometry/nearest'
+import { closestPointOnSegment } from './geometry/nearest'
+import { distance } from './geometry/vector'
 import { portoProjection } from './porto'
 
 /** Spatial grid cell size, metres. */
@@ -145,6 +146,11 @@ export function loadStreetNetwork(): StreetNetwork {
 export type StreetIndex = {
   /** Distance to the nearest street point, capped at `maxM`. */
   nearestDistanceM(p: Point, maxM: number): number
+  /**
+   * The nearest point on any street within `maxM`, or `null` when nothing is in
+   * range. `distanceM` is capped at `maxM` and equals `nearestDistanceM(p, maxM)`.
+   */
+  nearestPointM(p: Point, maxM: number): { distanceM: number; point: Point | null }
 }
 
 type Segment = readonly [Point, Point]
@@ -180,27 +186,37 @@ export function buildStreetIndex(ways: readonly Street[], cellM = CELL_M): Stree
     }
   }
 
-  return {
-    nearestDistanceM(p: Point, maxM: number): number {
-      let best = maxM
-      const cx0 = Math.floor((p[0] - maxM) / cellM)
-      const cx1 = Math.floor((p[0] + maxM) / cellM)
-      const cy0 = Math.floor((p[1] - maxM) / cellM)
-      const cy1 = Math.floor((p[1] + maxM) / cellM)
-      const seen = new Set<Segment>()
-      for (let cx = cx0; cx <= cx1; cx++) {
-        for (let cy = cy0; cy <= cy1; cy++) {
-          const bucket = cells.get(key(cx, cy))
-          if (!bucket) continue
-          for (const seg of bucket) {
-            if (seen.has(seg)) continue
-            seen.add(seg)
-            const d = distanceToSegment(p, seg[0], seg[1])
-            if (d < best) best = d
+  /**
+   * Scan the cells covering `[p - maxM, p + maxM]` for the nearest segment. A
+   * segment straddling several cells may be tested more than once — cheaper than
+   * de-duplicating, and the running minimum is unaffected.
+   */
+  function scan(p: Point, maxM: number): { distanceM: number; point: Point | null } {
+    let best = maxM
+    let bestPoint: Point | null = null
+    const cx0 = Math.floor((p[0] - maxM) / cellM)
+    const cx1 = Math.floor((p[0] + maxM) / cellM)
+    const cy0 = Math.floor((p[1] - maxM) / cellM)
+    const cy1 = Math.floor((p[1] + maxM) / cellM)
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const bucket = cells.get(key(cx, cy))
+        if (!bucket) continue
+        for (const seg of bucket) {
+          const foot = closestPointOnSegment(p, seg[0], seg[1])
+          const d = distance(p, foot)
+          if (d < best) {
+            best = d
+            bestPoint = foot
           }
         }
       }
-      return best
-    },
+    }
+    return { distanceM: best, point: bestPoint }
+  }
+
+  return {
+    nearestDistanceM: (p, maxM) => scan(p, maxM).distanceM,
+    nearestPointM: (p, maxM) => scan(p, maxM),
   }
 }

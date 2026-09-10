@@ -120,3 +120,46 @@ describe('buildStreetIndex', () => {
     expect(index.nearestDistanceM([100000, 100000], 25)).toBe(25)
   })
 })
+
+describe('StreetIndex.nearestPointM', () => {
+  const ways: Street[] = [
+    [[0, 0], [100, 0], [100, 100]],
+    [[-50, 30], [-50, -30]],
+  ]
+  const index = buildStreetIndex(ways, 50)
+
+  it('returns a point on the nearest segment, with distanceM === nearestDistanceM', () => {
+    const p: Point = [40, 25]
+    const { distanceM, point } = index.nearestPointM(p, 1000)
+    expect(point).not.toBeNull()
+    // Nearest segment is y = 0 between x = 0 and x = 100 → foot at (40, 0).
+    expect(point![0]).toBeCloseTo(40, 6)
+    expect(point![1]).toBeCloseTo(0, 6)
+    expect(distanceM).toBeCloseTo(25, 6)
+    expect(distanceM).toBeCloseTo(index.nearestDistanceM(p, 1000), 6)
+  })
+
+  it('caps distanceM at maxM and returns a null point when nothing is in range', () => {
+    const res = index.nearestPointM([100000, 100000], 25)
+    expect(res.point).toBeNull()
+    expect(res.distanceM).toBe(25)
+  })
+
+  it('agrees with a brute-force nearest on random points', () => {
+    const segs: Array<[Point, Point]> = []
+    for (const w of ways) for (let i = 1; i < w.length; i++) segs.push([w[i - 1]!, w[i]!])
+    fc.assert(
+      fc.property(
+        fc.double({ min: -150, max: 250, noNaN: true }),
+        fc.double({ min: -150, max: 250, noNaN: true }),
+        (x, y) => {
+          const p: Point = [x, y]
+          let brute = 1000
+          for (const [a, b] of segs) brute = Math.min(brute, distanceToSegment(p, a, b))
+          expect(index.nearestPointM(p, 1000).distanceM).toBeCloseTo(brute, 6)
+        },
+      ),
+      { seed: 7, numRuns: 300 },
+    )
+  })
+})

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
 import {
   addRoutePoint,
+  applyPlacement,
   clearRoute,
   initialState,
   loadPlacement,
@@ -95,5 +96,19 @@ describe('reducers', () => {
   it('loadPlacement throws on an unknown circuit', () => {
     const placement = { anchor: [0, 0] as const, rotationRad: 0, scale: 1 }
     expect(() => loadPlacement(base, circuits, 'nope', placement)).toThrow(/unknown circuit/)
+  })
+
+  it('applyPlacement replaces the placement (copied) and clears the route, keeping the circuit', () => {
+    const traced = addRoutePoint(addRoutePoint(base, [-8.6, 41.15]), [-8.59, 41.16])
+    const placement = { anchor: [-8.55, 41.18] as const, rotationRad: 0.9, scale: 1.5 }
+    const next = applyPlacement(traced, placement)
+
+    expect(next.circuitId).toBe(traced.circuitId)
+    expect(next.placement).toEqual(placement)
+    expect(next.placement.anchor).not.toBe(placement.anchor)
+    expect(next.route).toEqual([])
+    // pure: inputs untouched
+    expect(traced.route).toHaveLength(2)
+    expect(base.placement).not.toEqual(placement)
   })
 })
