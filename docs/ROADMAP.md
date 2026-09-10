@@ -6,11 +6,13 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 6+ triage.** The manual acetate workflow is complete end to end
-(place → judge → keep → trace & study). Next is to pick the first Phase 6+ item
-to spec — the strongest candidates are freeing the map (any location + place
-search, which also needs street data beyond the Porto box) and snap-to-street
-for the traced route. See the Phase 6+ list below.
+**Phase 6 — Suggested placements.** Spec:
+[specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements.md).
+Not started. Opt-in "Suggest placements": search the bundled Porto street
+network for spots where the chosen circuit's shape sits well on real streets and
+offer the best few as ranked, hand-tunable starting points. Geometry-only
+(coverage + turning-function + Procrustes); no routable graph, no Overpass,
+fixed scale. The routable-loop and beyond-Porto work stays in the Later list.
 
 ## Phases
 
@@ -93,7 +95,21 @@ Spec: [specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
 - The route is persisted with its placement (`SavedPlacement` gains an optional
   `route`, `schemaVersion` → 2, v1 records still load).
 
-### Phase 6+ — Roadmap / not scheduled
+### Phase 6 — Suggested placements — `todo`
+
+Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements.md).
+
+- Opt-in **Suggest placements**: coarse-to-fine search over translation +
+  rotation (fixed scale) of the chosen circuit against the bundled Porto street
+  index; objective = Phase 3 coverage + turning-function distance + Procrustes
+  residual of the snapped samples.
+- Show the best ~5 as ranked rows ("NN % on streets · ~NN m avg"); hover to
+  preview the outline, **Use this** to drop the circuit there (still fully
+  draggable, route cleared with a confirm).
+- Time-sliced on the main thread (progress bar + cancel), no Web Worker, no
+  Overpass, no routable graph.
+
+### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
   names, notes, and a list to load from (Phase 4 ships one per circuit only).
@@ -103,18 +119,45 @@ Spec: [specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
 - Free the map: any location, pan/zoom, place search.
 - Street network beyond the bundled Porto box: either a larger bundled asset or
   an on-demand "load streets for this area" button that fetches Overpass for the
-  current view and caches it. Needed before the map can be freed.
-- Editable circuit scale target by distance instead of 1:1.
-- Automatic matching: given a drawn shape or a circuit, search the street network
-  (reusing the Phase 3 street data, extended beyond Porto via Overpass) and
-  suggest placements, scored by turning function + Procrustes distance.
-- Snap a traced route to the street network.
+  current view and caches it. Needed before the map can be freed *and* before
+  Phase 6's search can suggest placements outside Porto.
+- A routable street graph built from the bundled geometry: connectivity, finding
+  an actual closed street loop of the circuit's shape, routing between clicked
+  points, and snapping a traced route to the network. Turns Phase 6's geometry
+  hint into a real found-loop match (turning function + Procrustes on the routed
+  loop).
+- Editable circuit scale target by distance instead of 1:1 (composes with the
+  Phase 6 search to add a scale degree of freedom).
+- Matching a freehand sketch / the user's traced route against the network to
+  find circuit-like loops (reuses the Phase 6 objective functions).
 - More circuits; auto-select the circuit for the current race weekend.
-- GPX export.
+- GPX export of the traced route.
 
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-10 — Phase 6 spec written.** Suggested placements — the geometry-only
+  first cut of the roadmap's "automatic matching". Decisions locked: **opt-in**
+  ("Suggest placements" button, never automatic) and **advisory** (a suggestion
+  only sets the Phase 2 placement, which stays draggable). Search is over
+  **translation + rotation at a fixed scale** (the current UI scale; real scale
+  by default) against the **bundled Porto street index only** — no Overpass, no
+  routable graph, so suggestions only ever land inside the Phase 3 bbox. A
+  generator `searchPlacements` does coarse grid + rotation sweep → keep top 24 →
+  local refine → de-duplicate → top 5; `app/suggest.ts` pumps it in ~12 ms
+  slices on the main thread (progress bar + cancel; a Web Worker is a later
+  drop-in if needed). Per-candidate objective: Phase 3 **coverage** +
+  **turning-function distance** + **Procrustes residual** of the samples snapped
+  to their nearest street points (`W_TURNING`/`W_PROCRUSTES` weights). Results
+  are labelled with the familiar "NN % on streets" + a metres deviation — the
+  turning/Procrustes numbers are internal ranking only, no headline match score
+  (keeps the *judgement stays with the user* principle). New pure
+  `geometry/turning.ts`, `geometry/procrustes.ts`, `match/objective.ts`,
+  `match/search.ts`; `StreetIndex` gains `nearestPointM`; `applyPlacement`
+  reducer. Routable-loop matching, beyond-Porto search, scale-target search and
+  sketch matching are split out into the *Later* list. Full spec:
+  `docs/specs/phase-6-suggested-placements.md`.
 
 - **2026-09-10 — Phase 5 shipped.** Trace & study. A **Trace route** toggle puts
   the map into trace mode (the overlay locks, the handle hides); each map click
