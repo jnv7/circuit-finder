@@ -6,9 +6,12 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 5 — Trace & study.** Not started; no spec yet. Trace a route along real
-streets under the overlay, show its real length and deviation from the circuit
-shape, and give a clean printable/screenshot view for memorising it.
+**Phase 5 — Trace & study.** Spec:
+[specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
+Not started. Trace a route by free clicking along the streets under the overlay;
+show its real length and a plain metres-based deviation from the circuit shape
+(no match %); a UI-stripping "study view" for screenshots. The route is saved
+with the placement (`SavedPlacement` → v2). Snap-to-street stays Phase 6+.
 
 ## Phases
 
@@ -78,9 +81,18 @@ Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.m
 
 ### Phase 5 — Trace & study — `todo`
 
-- Trace mode: click along real streets, following the overlay, to draw the route.
-- Show traced route real length and deviation from the circuit shape.
-- Clean, printable/screenshot-friendly view for memorising the route.
+Spec: [specs/phase-5-trace-and-study.md](specs/phase-5-trace-and-study.md).
+
+- Trace mode: free clicking along real streets, following the overlay, to draw
+  the route (straight segments between clicks; no snapping — that is Phase 6+).
+  Add / undo / clear points; the overlay locks while tracing.
+- Route stats: real length vs the circuit length at the current scale, and a
+  symmetric mean/max **deviation in metres** — a description, not a match score.
+- "Study view": a toggle that strips the UI to the map + route + a small summary
+  for a clean screenshot (browser print works; a print stylesheet and PNG
+  export are later).
+- The route is persisted with its placement (`SavedPlacement` gains an optional
+  `route`, `schemaVersion` → 2, v1 records still load).
 
 ### Phase 6+ — Roadmap / not scheduled
 
@@ -104,6 +116,24 @@ Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.m
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-10 — Phase 5 spec written.** Trace & study. Decisions locked:
+  tracing is **free clicking** (straight segments between clicked vertices, no
+  snapping — snap-to-street stays Phase 6+); an explicit trace-mode toggle locks
+  the overlay while active; editing is add / undo / clear only (no vertex
+  drag). The route lives in `AppState.route` (`LonLat[]`) with pure reducers;
+  `selectCircuit` clears it, `loadPlacement` restores it. Deviation is reported
+  as **plain metres** — resample route + placed centreline at `DEV_SAMPLE_M =
+  10` m, symmetric nearest-distance, show mean and max — explicitly **not** a
+  single match %, consistent with Phase 3 and the *judgement stays with the
+  user* principle; the panel also shows route length vs circuit length at the
+  current scale. "Study view" is a UI-stripping toggle (hide panel controls,
+  handle, circuit overlay, street layer; keep map + route + a summary with an
+  Exit button); no print stylesheet or PNG export yet. Persistence:
+  `SavedPlacement` gains optional `route`, `PLACEMENTS_SCHEMA_VERSION` → 2, with
+  a tolerant in-memory upgrade of stored v1 records. New pure `src/app/trace.ts`
+  (length + deviation); no new data file, no new dependency. Full spec:
+  `docs/specs/phase-5-trace-and-study.md`.
 
 - **2026-09-10 — Phase 4 shipped.** Save & restore a placement, one per circuit.
   The current placement is saved with **Save placement** into the single
