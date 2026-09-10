@@ -6,8 +6,9 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 2 — Map + acetate overlay.** Spec:
-[specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md). Not started.
+**Phase 3 — Street proximity feedback.** Spec:
+[specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md). Not
+started.
 
 ## Phases
 
@@ -37,7 +38,7 @@ Spec: [specs/phase-1-geometry.md](specs/phase-1-geometry.md).
 - 48 passing tests, including `fast-check` property tests for
   rotate/scale invariance.
 
-### Phase 2 — Map + acetate overlay — `todo`
+### Phase 2 — Map + acetate overlay — `done`
 
 Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 
@@ -48,6 +49,8 @@ Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 - Live readout: lap length and longest straight, in km/m.
 
 ### Phase 3 — Street proximity feedback — `todo`
+
+Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
 
 - Bundle a simplified Porto street network as a static asset (same pattern as
   `circuits.json`); no runtime Overpass.
@@ -87,6 +90,18 @@ Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 
 Newest first. Each entry dated.
 
+- **2026-09-10 — Phase 2 shipped.** First interactive release: a Leaflet map
+  fixed on Porto (OSM raster tiles, no key), a chosen circuit's centreline
+  overlaid at true 1:1, drag-anywhere to move and a single handle to rotate,
+  plus a live lap-length / longest-straight readout and a 0.5–3.0 scale
+  multiplier. Leaflet is the only new runtime dependency; drag and rotate are
+  wired directly on Leaflet pointer events (no plugin). State is one
+  module-level object; a re-render is a pure `overlayLatLngs` recompute plus a
+  polyline swap. Placement math (`app/overlay.ts`), rotation-from-pointer
+  (`app/rotate.ts`) and the reducers (`app/state.ts`) are pure with unit +
+  `fast-check` coverage; the Leaflet glue has one jsdom mount smoke test.
+  Rotation sign convention: `rotationRad` is CCW in the local ENU frame and CCW
+  on screen, 0 = handle straight up. 70 tests pass.
 - **2026-09-10 — New Phase 3: street proximity feedback.** While the user moves
   the overlay by hand, colour it by how much of its length sits near real
   streets — an advisory hint, keeping judgement with the user (does not violate
