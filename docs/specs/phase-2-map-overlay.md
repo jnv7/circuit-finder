@@ -12,15 +12,16 @@ circuit's centreline onto it at true 1:1 scale, and let the user slide and
 rotate it by hand — the acetate move from the vision, on a web map. A live
 readout shows the lap length and longest straight for the current scale.
 
-No saving yet (Phase 3) and no route tracing yet (Phase 4). When this phase
-ships, the user can *find* a placement but not *keep* it.
+No street-proximity feedback yet (Phase 3), no saving yet (Phase 4), and no
+route tracing yet (Phase 5). When this phase ships, the user can *find* a
+placement by eye but not *keep* it.
 
 ## Decisions locked for this phase
 
 - **Map:** Leaflet (from npm) with OpenStreetMap raster tiles, standard
   attribution, no API key. Initial view is fixed on Porto and the user cannot
   change the base area yet (panning/zooming the map itself is fine; "free the
-  map" is a Phase 5+ item).
+  map" is a Phase 6+ item).
 - **Initial view:** centre `41.1579, -8.6291`, zoom `14`. Tune during
   implementation; keep it a single named constant.
 - **Overlay geometry:** reuse `MetricCircuit.metricCentreline` (metres, centroid
@@ -162,10 +163,11 @@ one jsdom test opts in with a `// @vitest-environment jsdom` comment.
 
 ## Not in scope
 
-- Saving, restoring, exporting, or URL state (Phase 3).
-- Route tracing or deviation measurement (Phase 4).
-- Changing the map's area, place search, or pan-to-anywhere (Phase 5+).
-- A scale-by-drag handle or a scale-by-target-distance control (Phase 5+).
+- Street-proximity colouring / any use of street data (Phase 3).
+- Saving, restoring, exporting, or URL state (Phase 4).
+- Route tracing or deviation measurement (Phase 5).
+- Changing the map's area, place search, or pan-to-anywhere (Phase 6+).
+- A scale-by-drag handle or a scale-by-target-distance control (Phase 6+).
 - Mirrored placements.
 - Snapping the overlay to streets or any street-network data.
 - Elevation.

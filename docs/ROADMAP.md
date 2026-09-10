@@ -47,7 +47,18 @@ Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 - Drag to move, handle to rotate. No mirror.
 - Live readout: lap length and longest straight, in km/m.
 
-### Phase 3 — Save / restore / export — `todo`
+### Phase 3 — Street proximity feedback — `todo`
+
+- Bundle a simplified Porto street network as a static asset (same pattern as
+  `circuits.json`); no runtime Overpass.
+- Spatial grid index built once on load; nearest-street distance per centreline
+  point stays a pure, fast, offline computation.
+- While the user moves/rotates the overlay, colour it on a green→amber→red
+  ramp — ideally per segment — by how much of its length sits within ~10 m of a
+  street. A hint, not a verdict; the user still judges the fit.
+- No automatic placement or search (that stays Phase 6+).
+
+### Phase 4 — Save / restore / export — `todo`
 
 - Save an attempt `{ circuitId, center, rotation, scale, name, notes, createdAt }`
   to `localStorage`.
@@ -55,19 +66,19 @@ Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 - Export/import an attempt as a JSON file.
 - Optionally load bundled example attempts from the repo.
 
-### Phase 4 — Trace & study — `todo`
+### Phase 5 — Trace & study — `todo`
 
 - Trace mode: click along real streets, following the overlay, to draw the route.
 - Show traced route real length and deviation from the circuit shape.
 - Clean, printable/screenshot-friendly view for memorising the route.
 
-### Phase 5+ — Roadmap / not scheduled
+### Phase 6+ — Roadmap / not scheduled
 
 - Free the map: any location, pan/zoom, place search.
 - Editable circuit scale target by distance instead of 1:1.
 - Automatic matching: given a drawn shape or a circuit, search the street network
-  (street data via Overpass API) and suggest placements, scored by turning
-  function + Procrustes distance.
+  (reusing the Phase 3 street data, extended beyond Porto via Overpass) and
+  suggest placements, scored by turning function + Procrustes distance.
 - Snap a traced route to the street network.
 - More circuits; auto-select the circuit for the current race weekend.
 - GPX export.
@@ -76,6 +87,13 @@ Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 
 Newest first. Each entry dated.
 
+- **2026-09-10 — New Phase 3: street proximity feedback.** While the user moves
+  the overlay by hand, colour it by how much of its length sits near real
+  streets — an advisory hint, keeping judgement with the user (does not violate
+  the "no match score required" principle). Approach: bundle a simplified Porto
+  street network as a static asset, index it in a spatial grid, compute
+  nearest-street distance as pure local geometry. Slots before save/trace; old
+  Phases 3/4/5+ become 4/5/6+.
 - **2026-09-09 — Phase 1 shipped.** Circuit geometry source: **OpenStreetMap**
   raceway ways (ODbL 1.0, per-circuit attribution stored in `circuits.json`; a
   normalised copy lives in the repo, no runtime fetch). Bundled circuits:
@@ -102,7 +120,7 @@ Newest first. Each entry dated.
   TypeScript + Vite + Leaflet + Vitest. Persistence via `localStorage` + JSON
   export/import. No Python, no server, no paid services.
 - **2026-09-08 — Manual "acetate" workflow is the MVP.** Automated shape matching
-  is deferred to Phase 5+. The user judges the fit by eye.
+  is deferred to Phase 6+. The user judges the fit by eye.
 - **2026-09-08 — Real 1:1 scale by default**, with an optional multiplier.
   Satisfies "a 2 km circuit straight is a ~2 km route segment".
 - **2026-09-08 — Transform: move + rotate only.** No reflection/mirror.
