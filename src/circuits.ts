@@ -6,18 +6,15 @@
 // see docs/specs/phase-1-geometry.md and src/data/circuits.schema.md. The app
 // never fetches OSM at runtime.
 import rawCircuits from './data/circuits.json'
+import type { Attribution } from './attribution'
+import { validateAttribution } from './attribution'
 import type { LonLat } from './geo'
 import { projectRing } from './geo'
 import type { Point, Straight } from './geometry/types'
 import { pathLength, recenter } from './geometry/path'
 import { longestStraight } from './geometry/straight'
 
-export type Attribution = {
-  source: string
-  license: string
-  url: string
-  retrieved: string
-}
+export type { Attribution }
 
 export type Circuit = {
   id: string
@@ -49,24 +46,6 @@ function isNonEmptyString(value: unknown): value is string {
 
 function coordsEqual(a: LonLat, b: LonLat): boolean {
   return Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9
-}
-
-function validateAttribution(value: unknown, where: string): Attribution {
-  if (typeof value !== 'object' || value === null) {
-    throw new Error(`${where} must have an attribution object`)
-  }
-  const record = value as Record<string, unknown>
-  for (const key of ['source', 'license', 'url', 'retrieved'] as const) {
-    if (!isNonEmptyString(record[key])) {
-      throw new Error(`${where} attribution.${key} must be a non-empty string`)
-    }
-  }
-  return {
-    source: record['source'] as string,
-    license: record['license'] as string,
-    url: record['url'] as string,
-    retrieved: record['retrieved'] as string,
-  }
 }
 
 function validateCentreline(value: unknown, where: string): LonLat[] {

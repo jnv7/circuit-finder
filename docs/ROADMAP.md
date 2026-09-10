@@ -6,9 +6,9 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 3 — Street proximity feedback.** Spec:
-[specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md). Not
-started.
+**Phase 4 — Save / restore / export.** Spec:
+[specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.md).
+Not started.
 
 ## Phases
 
@@ -50,7 +50,7 @@ Spec: [specs/phase-2-map-overlay.md](specs/phase-2-map-overlay.md).
 - Drag to move, handle to rotate. No mirror.
 - Live readout: lap length and longest straight, in km/m.
 
-### Phase 3 — Street proximity feedback — `todo`
+### Phase 3 — Street proximity feedback — `done`
 
 Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
 
@@ -65,11 +65,15 @@ Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
 
 ### Phase 4 — Save / restore / export — `todo`
 
-- Save an attempt `{ circuitId, center, rotation, scale, name, notes, createdAt }`
-  to `localStorage`.
-- List saved attempts; reload one onto the map.
-- Export/import an attempt as a JSON file.
-- Optionally load bundled example attempts from the repo.
+Spec: [specs/phase-4-save-restore-export.md](specs/phase-4-save-restore-export.md).
+
+- Save an *attempt* (`circuitId` + Phase 2 `Placement` + name/notes/timestamps)
+  to `localStorage` under one key.
+- List saved attempts; load one back onto the map (pans to it). Rename / edit
+  notes / delete.
+- Export an attempt as a self-identifying versioned JSON file; import one back as
+  a copy.
+- Two or three bundled, load-only example attempts.
 
 ### Phase 5 — Trace & study — `todo`
 
@@ -80,6 +84,9 @@ Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
 ### Phase 6+ — Roadmap / not scheduled
 
 - Free the map: any location, pan/zoom, place search.
+- Street network beyond the bundled Porto box: either a larger bundled asset or
+  an on-demand "load streets for this area" button that fetches Overpass for the
+  current view and caches it. Needed before the map can be freed.
 - Editable circuit scale target by distance instead of 1:1.
 - Automatic matching: given a drawn shape or a circuit, search the street network
   (reusing the Phase 3 street data, extended beyond Porto via Overpass) and
@@ -91,6 +98,49 @@ Spec: [specs/phase-3-street-proximity.md](specs/phase-3-street-proximity.md).
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-10 — Phase 4 spec written.** Save/restore/export. Decisions locked:
+  an *attempt* = Phase 2 `Placement` + `circuitId` + `name`/`notes`/timestamps +
+  `schemaVersion` (nothing about street data or the proximity result is stored —
+  both recompute on load). Persistence is one `localStorage` key
+  (`circuit-finder/attempts`, a JSON array), tolerant of corrupt/absent values
+  and of `localStorage` being unavailable (session stays non-persistent, no
+  crash). Save always creates a new attempt; rename + notes edits are allowed,
+  in-place geometry edits are not. Export/import is one attempt per file in a
+  self-identifying versioned wrapper
+  (`{ app, kind: "attempt", version, attempt }`); import always adds a copy with
+  a fresh id. Two or three bundled load-only example attempts
+  (`src/data/example-attempts.json`). No backend, no new dependency. Full spec:
+  `docs/specs/phase-4-save-restore-export.md`.
+
+- **2026-09-10 — Phase 3 shipped.** Street-proximity feedback: while the user
+  moves or rotates the overlay, its centreline recolours live on a
+  green → amber → red ramp by how much of each segment sits within 10 m of a
+  real Porto street, plus a live "near a street: NN %" figure. Advisory only —
+  no score, no snap, no auto-placement. A faint grey street layer (toggle, on by
+  default) shows what the colouring reacts to. Pure modules with full unit +
+  `fast-check` coverage: `geometry/nearest` (point↔segment), `streets`
+  (loader/validator + uniform-grid spatial index, `CELL_M = 50`), `app/proximity`
+  (per-segment coverage by 5 m sampling, `NEAR_M = 10`, `LEVELS = 8` colour
+  buckets, green/amber/red lerp). New shared `src/porto.ts` (fixed Porto metric
+  frame) and `src/attribution.ts` (attribution validator factored out of
+  `circuits.ts`). Leaflet glue: `LEVELS` persistent bucket polylines, rAF-
+  coalesced re-render. 94 tests pass.
+  **Street data.** OSM runnable ways (ODbL), bundled as
+  `src/data/porto-streets.json`, no runtime Overpass. The spec's nominal bbox
+  (~11 × 9 km) as plain `[lon, lat]` arrays came in at ~1.9 MB — far over the
+  ≤ 600 KB budget. Per the spec's escape hatch: reshaped the bbox to the real
+  zoom-14 draggable area (`[-8.688, 41.135, -8.575, 41.183]`, ~9.4 × 5.3 km —
+  narrower N–S than nominal, and pushed west so the west edge sits on the Foz do
+  Douro coastline: the whole city is covered, panning outside just shows no
+  colouring) **and** added a compact delta-integer encoding on a `1e-5`° lattice
+  (max error ≈ 0.56 m). Result: 26 994 ways, 70 320 vertices, **588 563 bytes
+  raw** (~575 KB, fits the budget), ~234 KB gzip. It is inlined into the JS
+  bundle (like `circuits.json`) to keep zero runtime requests, so the production
+  chunk is ~759 KB / ~289 KB gzip; `chunkSizeWarningLimit` raised to 800. DP
+  tolerance 5 m; all listed runnable highway types kept. Extending coverage
+  beyond this box (statically, or via a "load this area" button that fetches
+  Overpass on demand) is noted as a Phase 6+ option.
 
 - **2026-09-10 — Deploy target: GitHub Pages.** The repo lives on GitHub
   (`github.com/jnv7/circuit-finder`), never GitLab. Replaced `.gitlab-ci.yml`

@@ -1,6 +1,6 @@
 # Spec — Phase 3: Street proximity feedback
 
-Status: `todo`
+Status: `done` (2026-09-10) — see *Implementation notes* at the end.
 Depends on: [phase-2-map-overlay.md](phase-2-map-overlay.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),
 [../../CONVENTIONS.md](../../CONVENTIONS.md)
@@ -297,3 +297,31 @@ gains nothing but the small pure modules.
 - Elevation, surface type, lighting, or any non-geometric street attribute.
 - Per-segment length readouts or any breakdown beyond the single "% near a
   street" figure and the colour.
+
+## Implementation notes (2026-09-10)
+
+Built as specified, with these deviations:
+
+- **Street data encoding & bbox.** The nominal bbox as plain `[lon, lat]` arrays
+  came in at ~1.9 MB, far over the ≤ 600 KB budget. Applying the spec's escape
+  hatch: the bbox was reshaped to the real zoom-14 draggable area
+  (`[-8.688, 41.135, -8.575, 41.183]`, ~9.4 × 5.3 km — narrower N–S than nominal,
+  west edge on the Foz do Douro coastline so the whole city is covered) **and**
+  `porto-streets.json` now stores each way as a flat delta-integer array on a
+  `1e-5`° lattice (`grid` field; max quantisation error ≈ 0.56 m).
+  `validateStreetNetwork` decodes and then applies the coordinate rules from the
+  spec. Final file: 26 994 ways / 70 320 vertices / 588 563 bytes raw / ~234 KB
+  gzip. DP tolerance 5 m. Full detail in
+  [`src/data/porto-streets.schema.md`](../../src/data/porto-streets.schema.md).
+  Extending coverage past this box is a Phase 6+ item (see ROADMAP).
+- **Bundling.** `porto-streets.json` is imported (inlined into the JS bundle,
+  like `circuits.json`) rather than fetched, so there is still no runtime
+  request; the production chunk is ~768 KB / ~295 KB gzip and
+  `build.chunkSizeWarningLimit` is raised to 800.
+- **`updateReadout` signature** became `updateReadout(root, { lapM, straightM,
+  nearFraction })` (object, not positional) since it now carries three values.
+- **rAF coalescing** applies to the pointer-interaction re-renders
+  (`scheduleRender`); the initial mount still renders synchronously so the first
+  paint (and the jsdom smoke test) needs no frame tick.
+- Attribution validation was factored into `src/attribution.ts` and shared by
+  `circuits.ts` and `streets.ts`, as the spec suggested.

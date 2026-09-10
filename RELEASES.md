@@ -8,6 +8,36 @@ Newest release first.
 
 ---
 
+## 0.4.0 — See where the circuit meets the streets (2026-09-10)
+
+**The overlay now tells you how runnable a placement looks.** As you drag or
+rotate a circuit over Porto, its outline recolours in real time:
+
+- **green** where that stretch sits right on top of a real street,
+- **amber** where it partly does,
+- **red** where it cuts across a block with no street under it.
+
+A small **legend** in the panel explains the colours.
+
+**What you can see:**
+
+- a live **"Near a street: NN %"** figure in the panel — roughly how much of the
+  whole lap is running on real streets right now. It updates as you move, rotate,
+  change circuit, or change the scale. It is just a hint: there is no score and
+  nothing stops you placing the circuit wherever you like.
+- a faint grey **street layer** over Porto, so you can see what the colouring is
+  reacting to. Turn it off with the **"Show streets"** checkbox if it gets busy.
+
+The street map is a bundled copy of OpenStreetMap data (ODbL), credited on the
+map — nothing is downloaded while you use the tool. Feedback covers roughly
+9 × 5 km: the whole city of Porto, from the Foz do Douro coast in the west
+across to the eastern edge of town. Drag far outside that and the colouring
+simply stops.
+
+You still cannot save a placement — that is the next release.
+
+---
+
 ## 0.3.0 — Put a circuit on the map (2026-09-10)
 
 **The first interactive release.** circuit-finder now opens on a real map of

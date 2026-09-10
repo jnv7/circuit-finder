@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from 'vitest'
 import { loadMetricCircuits } from '../circuits'
+import { LEVELS, proximityColor } from './proximity'
 import { createMapApp } from './map'
 
 // Leaflet reads element sizes off the container; jsdom reports 0 for all of
@@ -13,18 +14,25 @@ beforeAll(() => {
 })
 
 const circuits = loadMetricCircuits()
+const rampColors = new Set(
+  Array.from({ length: LEVELS }, (_, q) => proximityColor((q + 0.5) / LEVELS)),
+)
 
 describe('createMapApp', () => {
-  it('mounts a Leaflet map with a centreline polyline and tears down cleanly', () => {
+  it('mounts the map with a street layer and coloured centreline segments, and tears down cleanly', () => {
     const container = document.createElement('div')
     document.body.append(container)
 
     const app = createMapApp(container, circuits)
 
     expect(container.querySelector('.leaflet-container')).not.toBeNull()
-    const paths = container.querySelectorAll('svg path')
-    expect(paths.length).toBeGreaterThanOrEqual(2) // fat drag target + thin centreline
     expect(container.querySelector('.rotate-handle')).not.toBeNull()
+
+    const strokes = [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('stroke'))
+    // The faint grey street layer.
+    expect(strokes).toContain('#8a8a8a')
+    // At least one centreline segment drawn in a ramp colour.
+    expect(strokes.some((s) => s !== null && rampColors.has(s))).toBe(true)
 
     expect(() => app.destroy()).not.toThrow()
     expect(container.querySelector('.leaflet-container')).toBeNull()
