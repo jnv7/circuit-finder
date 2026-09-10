@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { localProjection, meanLonLat, projectRing } from './geo'
+import { localProjection, meanLonLat, placePoints, projectRing } from './geo'
 import type { LonLat } from './geo'
 import { distance } from './geometry/vector'
 
@@ -44,6 +44,18 @@ describe('geo', () => {
 
   it('meanLonLat averages coordinates', () => {
     expect(meanLonLat([[0, 0], [2, 4], [4, 8]])).toEqual([2, 4])
+  })
+
+  it('placePoints drops local metres onto lon/lat around an anchor', () => {
+    const anchor: LonLat = [-8.6291, 41.1579]
+    // origin stays at the anchor; +x is east, +y is north.
+    const [origin, east, north] = placePoints([[0, 0], [1000, 0], [0, 1000]], anchor)
+    expect(origin![0]).toBeCloseTo(anchor[0], 9)
+    expect(origin![1]).toBeCloseTo(anchor[1], 9)
+    expect(east![0]).toBeGreaterThan(anchor[0])
+    expect(east![1]).toBeCloseTo(anchor[1], 9)
+    expect(north![1]).toBeGreaterThan(anchor[1])
+    expect(north![0]).toBeCloseTo(anchor[0], 9)
   })
 
   it('projectRing centres the ring near the origin', () => {

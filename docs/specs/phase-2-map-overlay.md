@@ -1,6 +1,6 @@
 # Spec — Phase 2: Map + acetate overlay
 
-Status: `todo`
+Status: `done` (shipped 2026-09-10)
 Depends on: [phase-1-geometry.md](phase-1-geometry.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),
 [../../CONVENTIONS.md](../../CONVENTIONS.md)

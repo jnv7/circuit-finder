@@ -8,6 +8,34 @@ Newest release first.
 
 ---
 
+## 0.3.0 — Put a circuit on the map (2026-09-10)
+
+**The first interactive release.** circuit-finder now opens on a real map of
+Porto with a Formula 1 circuit laid over it at true real-world scale — the
+paper-acetate idea, on a live map.
+
+**What you can do:**
+
+- **Pick a circuit** (Hungaroring, Silverstone, or Catalunya) from the panel and
+  see its centreline drawn on Porto at 1:1.
+- **Drag it anywhere** on the map to reposition it, and **rotate it** with the
+  round handle to line it up with streets you know.
+- **Change the scale** with the multiplier (0.5× to 3×) if you want to explore a
+  bigger or smaller loop — 1× is the real circuit size.
+
+**What you can see:**
+
+- a live readout of the **lap length** and the **longest straight** for the
+  current scale, in km/m — moving or rotating the overlay never changes these,
+  only the scale does;
+- both data credits on the map: OpenStreetMap for the map tiles and for the
+  circuit geometry (ODbL).
+
+You cannot save a placement yet — that is the next release. The map also stays
+fixed on Porto for now.
+
+---
+
 ## 0.2.0 — Real circuits and their measurements (2026-09-10)
 
 **See real Formula 1 circuit shapes and dimensions.** The circuit list now

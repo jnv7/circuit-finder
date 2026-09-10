@@ -52,6 +52,17 @@ export function localProjection(origin: LonLat): LocalProjection {
 }
 
 /**
+ * Inverse projection: place local-metre points (x = east, y = north, relative
+ * to `anchor`) back onto geographic coordinates around `anchor`. Thin wrapper
+ * over `localProjection(anchor).toLonLat`, used to drop transformed circuit
+ * geometry onto the map.
+ */
+export function placePoints(points: readonly Point[], anchor: LonLat): LonLat[] {
+  const projection = localProjection(anchor)
+  return points.map((p) => projection.toLonLat(p))
+}
+
+/**
  * Project a ring of geographic coordinates to local metres, centred on the
  * ring's mean coordinate so the result straddles the origin.
  */
