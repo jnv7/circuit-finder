@@ -6,11 +6,19 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-Phase 7 (routable street graph & routed tracing) just shipped. No phase is
-speced yet for what comes next — the natural candidate is the "Later" item
-below on **finding an actual closed street loop shaped like the circuit**
-using Phase 7's graph (it needs its own spec before implementation, per the
-working method in [../CLAUDE.md](../CLAUDE.md)).
+**Phase 8 — Routed loop suggestions.** Spec:
+[specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-suggestions.md).
+Not started. Prompted directly by user feedback that Phase 6's suggestions
+still sit over buildings — because they always have: Phase 6 only ever
+measured nearest-street proximity, and Phase 7's routable graph never touched
+the suggestion search (see that spec's own *Not in scope*). This phase closes
+that gap: for each of Phase 6's geometry-ranked candidates, try to build a
+real, fully street-connected closed loop around its placed outline using
+Phase 7's graph; suggestions backed by one are shown with their real loop
+length and deviation from the circuit shape (reusing `app/trace.ts`'s
+`routeStats`, not a coverage %) and, once used, seed an editable traced route
+that actually follows streets the whole way around. Falls back to Phase 6's
+old geometry-only suggestions when no candidate can form a full loop.
 
 ## Phases
 
@@ -121,6 +129,21 @@ Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
   like the circuit, and Phase 6's suggestions stay geometry-only. That stays a
   later item once this graph has proven itself.
 
+### Phase 8 — Routed loop suggestions — `todo`
+
+Spec: [specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-suggestions.md).
+
+- For each of Phase 6's geometry-ranked candidates, try to build a real,
+  fully street-connected closed loop around its placed outline using Phase 7's
+  graph — every sample must snap to the network and every consecutive pair
+  (closing the loop) must actually connect; no silent straight-line patching.
+- A validated **routed suggestion** is labelled with its real loop length and
+  its deviation from the circuit shape in metres (`app/trace.ts`'s
+  `routeStats`, reused) instead of a coverage percentage; using it seeds both
+  the placement and an editable traced route that already follows streets.
+- Falls back to Phase 6's old geometry-only suggestions when no candidate in
+  the pool can form a full loop, so the list is never emptier than before.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -133,9 +156,10 @@ Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
   an on-demand "load streets for this area" button that fetches Overpass for the
   current view and caches it. Needed before the map can be freed *and* before
   Phase 6's search can suggest placements outside Porto.
-- Finding an actual closed street loop shaped like the circuit, using Phase 7's
-  routable graph, and re-scoring or replacing Phase 6's geometry-only
-  suggestions with it (turning function + Procrustes on the routed loop).
+- A freeform, shape-first graph search (bending a loop street-by-street to fit
+  the circuit, rather than validating poses Phase 6's rigid search already
+  found) — a later item if Phase 8's simpler validate-what-Phase-6-found
+  approach proves too limited on real Porto data.
 - Editable circuit scale target by distance instead of 1:1 (composes with the
   Phase 6 search to add a scale degree of freedom).
 - Matching a freehand sketch / the user's traced route against the network to
@@ -149,6 +173,32 @@ Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-11 — Phase 8 spec written.** Routed loop suggestions, prompted
+  directly by user feedback that suggestions still sit over buildings.
+  Decision: **validate, don't search freeform** — reuse Phase 6's
+  `searchPlacements` unchanged (called with a larger candidate pool,
+  `LOOP_CANDIDATE_POOL=24`) to find *where* to look, then for each candidate
+  try to build a real closed loop with Phase 7's graph: `LOOP_SAMPLES=60`
+  even points around the placed outline must all snap to the network
+  (`LOOP_SNAP_MAX_M=30`) and every consecutive pair, including the closing
+  leg, must connect by `shortestPath` — any single miss fails the whole
+  candidate (stricter than tracing's advisory straight-line fallback, since a
+  *suggestion* claims a real loop exists). A successful loop longer than
+  `MAX_LENGTH_RATIO=1.5`× the circuit's length is still rejected (catches a
+  legitimately-connected but far-detouring loop). Routed suggestions are
+  labelled with real loop length + deviation from the circuit shape, reusing
+  `app/trace.ts`'s `routeStats` — a deliberate departure from the ROADMAP's
+  older "turning function + Procrustes on the routed loop" note, in favour of
+  already-shipped plain-metres code that fits the vision's "no score"
+  principle better once a real path exists to measure. Graceful fallback:
+  when fewer than `LOOP_RESULT_COUNT=5` candidates route successfully, Phase
+  6's old geometry-only suggestions backfill the remainder, so the list is
+  never emptier than before this phase. `app/state.ts`'s `applyPlacement`
+  gains an optional `route` param so using a routed suggestion seeds an
+  editable traced route, not just a placement. All five constants are starting
+  points, to be tuned against real data during implementation like Phase 6's
+  were. Full spec: `docs/specs/phase-8-routed-loop-suggestions.md`.
 
 - **2026-09-11 — Phase 7 shipped.** Routable street graph & routed tracing.
   `src/graph.ts` builds a `StreetGraph` once from the bundled ways:
