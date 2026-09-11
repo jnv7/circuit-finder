@@ -8,6 +8,30 @@ Newest release first.
 
 ---
 
+## 0.8.0 — Tracing follows the actual streets (2026-09-11)
+
+**Your traced route now hugs real streets, not straight lines between clicks.**
+Turn on **Trace route** and click near a street: the click snaps to it, and the
+line to your next click follows the real street network the whole way —
+around corners, down the block you actually meant — instead of cutting
+straight through buildings.
+
+**What changes for you:**
+
+- Click anywhere within about 30 m of a street while tracing and it snaps
+  there. Click somewhere with no street nearby and nothing happens — no stray
+  point, just click again closer to a street.
+- **Route length** and the **deviation** figures now measure the real routed
+  distance — the streets you'd actually run — not the straight-line distance
+  between your clicks.
+- Outside the bundled Porto area (no street data there), tracing still works
+  the old way: free clicks joined by straight lines.
+
+Undo, clear, save, and Study view all work exactly as before — only what a
+click resolves to, and what gets drawn and measured, changed.
+
+---
+
 ## 0.7.1 — Street feedback that means something (2026-09-11)
 
 **The green now means "you could run this", not "a street is nearby".** Until

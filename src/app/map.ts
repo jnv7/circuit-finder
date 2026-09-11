@@ -8,6 +8,7 @@ import type { MetricCircuit } from '../circuits'
 import type { LonLat } from '../geo'
 import type { Point } from '../geometry/types'
 import { resample } from '../geometry/path'
+import { buildStreetGraph } from '../graph'
 import { PORTO_CENTER, PORTO_ZOOM, portoProjection } from '../porto'
 import { buildStreetIndex, loadStreetNetwork } from '../streets'
 import { overlayLatLngs, readout } from './overlay'
@@ -42,7 +43,7 @@ import {
 } from '../placements'
 import type { SavedPlacement } from '../placements'
 import { loadPlacements, savePlacements } from './storage'
-import { routeStats } from './trace'
+import { expandRoute, routeStats } from './trace'
 import type { RouteStats } from './trace'
 import { bind, renderControls, updateReadout } from '../ui/controls'
 
@@ -53,6 +54,9 @@ const HANDLE_PIXEL_RADIUS = 90
 
 /** Traced-route polyline colour. */
 const ROUTE_COLOR = '#1565c0'
+
+/** A click within this distance of the street network snaps to it while tracing. */
+const SNAP_MAX_M = 30
 
 const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const OSM_ATTRIBUTION =
@@ -88,6 +92,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   const project = portoProjection()
   const network = loadStreetNetwork()
   const streetIndex = buildStreetIndex(network.ways)
+  const streetGraph = buildStreetGraph(network.ways)
 
   // The network bbox in Porto-frame metres — the area the Phase 6 search sweeps.
   const sw = project.toLocal([network.bbox[0], network.bbox[1]])
@@ -184,17 +189,18 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     )
   }
 
-  /** Stats for the current route against the *live* placement's centreline. */
-  const currentRouteStats = (): RouteStats | null => {
+  /** The waypoints routed through the street graph, in Porto-frame metres. */
+  const expandedRoute = (): Point[] => expandRoute(state.route.map((c) => project.toLocal(c)), streetGraph)
+
+  /** Stats for a given routed polyline against the *live* placement's centreline. */
+  const routeStatsFor = (expanded: Point[]): RouteStats | null => {
     if (state.route.length < 2) return null
     const ring = overlayLatLngs(circuitById(state.circuitId), state.placement).map((c) =>
       project.toLocal(c),
     )
-    return routeStats(
-      state.route.map((c) => project.toLocal(c)),
-      ring,
-    )
+    return routeStats(expanded, ring)
   }
+  const currentRouteStats = (): RouteStats | null => routeStatsFor(expandedRoute())
   const circuitLapM = (): number =>
     readout(circuitById(state.circuitId), state.placement.scale).lapM
 
@@ -246,8 +252,10 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       handle.setLatLng(map.containerPointToLatLng(L.point(hp[0], hp[1])))
     }
 
-    // Traced route.
-    routeLine.setLatLngs(state.route.map(toLatLng))
+    // Traced route: drawn as the routed path through the street graph, not
+    // the raw clicked waypoints — vertex markers still mark the waypoints.
+    const expanded = expandedRoute()
+    routeLine.setLatLngs(expanded.map((p) => toLatLng(project.toLonLat(p))))
     vertexLayer.clearLayers()
     if (tracing) {
       for (const p of state.route) {
@@ -267,7 +275,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       lapM,
       straightM,
       nearFraction,
-      routeStats: currentRouteStats(),
+      routeStats: routeStatsFor(expanded),
       circuitLengthM: circuitLapM(),
     })
   }
@@ -532,10 +540,27 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     L.DomEvent.stop(e)
   }
 
-  // --- Trace: click the map to append a route vertex ------------------------
+  // --- Trace: click the map to append a route vertex -------------------------
+  // Inside the bundled bbox, a click snaps to the nearest network point
+  // (or is ignored if nothing is within SNAP_MAX_M); outside it, tracing
+  // falls back to Phase 5's free straight-line clicks (no street data there).
   const onMapClick = (e: L.LeafletMouseEvent): void => {
     if (!tracing) return
-    state = addRoutePoint(state, [e.latlng.lng, e.latlng.lat])
+    const metricPoint = project.toLocal([e.latlng.lng, e.latlng.lat])
+    const insideBBox =
+      metricPoint[0] >= searchBBox.min[0] &&
+      metricPoint[0] <= searchBBox.max[0] &&
+      metricPoint[1] >= searchBBox.min[1] &&
+      metricPoint[1] <= searchBBox.max[1]
+    if (!insideBBox) {
+      state = addRoutePoint(state, [e.latlng.lng, e.latlng.lat])
+      render()
+      renderPanel()
+      return
+    }
+    const resolved = streetGraph.nearestPointM(metricPoint, SNAP_MAX_M)
+    if (!resolved) return // too far from any street: ignore the click
+    state = addRoutePoint(state, project.toLonLat(resolved.point))
     render()
     renderPanel()
   }

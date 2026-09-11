@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
+import { buildStreetGraph } from '../graph'
+import type { Street } from '../streets'
 import type { Point } from '../geometry/types'
-import { DEV_SAMPLE_M, routeDeviation, routeLengthM, routeStats } from './trace'
+import { DEV_SAMPLE_M, expandRoute, routeDeviation, routeLengthM, routeStats } from './trace'
 
 // A square ring, 400 m on a side, centred on the origin.
 const ring: Point[] = [
@@ -58,6 +60,44 @@ describe('routeDeviation', () => {
     ]
     const { maxM } = routeDeviation(route, ring)
     expect(maxM).toBeGreaterThan(350)
+  })
+})
+
+describe('expandRoute', () => {
+  // Three streets meeting exactly at the origin (west/north/east spokes).
+  const spokes: Street[] = [
+    [[0, 0], [-100, 0]],
+    [[0, 0], [0, 100]],
+    [[0, 0], [100, 0]],
+  ]
+  const graph = buildStreetGraph(spokes)
+
+  it('concatenates the two routed legs without duplicating the join point', () => {
+    const waypoints: Point[] = [[-100, 0], [0, 100], [100, 0]]
+    const expanded = expandRoute(waypoints, graph)
+    expect(expanded).toEqual([[-100, 0], [0, 0], [0, 100], [0, 0], [100, 0]])
+    expect(routeLengthM(expanded)).toBeCloseTo(400, 6)
+  })
+
+  it('falls back to a straight line for a waypoint pair in disconnected components', () => {
+    const disconnected: Street[] = [
+      [[0, 0], [10, 0]],
+      [[10000, 10000], [10010, 10000]],
+    ]
+    const g = buildStreetGraph(disconnected)
+    const waypoints: Point[] = [[0, 0], [10000, 10000]]
+    const expanded = expandRoute(waypoints, g)
+    expect(expanded).toEqual([[0, 0], [10000, 10000]])
+  })
+
+  it('measures the real routed distance, not the straight-line waypoint distance', () => {
+    // West to north: routed via the shared centre is 200 m; the straight
+    // line between the two waypoints is only ~141 m.
+    const waypoints: Point[] = [[-100, 0], [0, 100]]
+    const straightLineM = Math.hypot(100, 100)
+    const expanded = expandRoute(waypoints, graph)
+    expect(routeLengthM(expanded)).toBeCloseTo(200, 6)
+    expect(routeLengthM(expanded)).toBeGreaterThan(straightLineM + 10)
   })
 })
 

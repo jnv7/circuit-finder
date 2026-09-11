@@ -4,9 +4,17 @@
 // calling. There is deliberately no single "match %": the numbers are plain
 // measurements (metres), the user judges what is close enough. See
 // docs/specs/phase-5-trace-and-study.md.
+import type { StreetGraph } from '../graph'
 import { distanceToSegment } from '../geometry/nearest'
 import { pathLength, resample } from '../geometry/path'
 import type { Point } from '../geometry/types'
+
+/**
+ * "Any point on the graph" tolerance for resolving a waypoint to its nearest
+ * node before routing — generous because a waypoint stored in `AppState.route`
+ * is already a network point (Phase 7 click-snapping), not an arbitrary click.
+ */
+const EXPAND_SNAP_M = 100_000
 
 /** Resample spacing, metres, for the deviation figure. */
 export const DEV_SAMPLE_M = 10
@@ -23,6 +31,31 @@ export type RouteStats = {
 /** Length of the traced route (open polyline). */
 export function routeLengthM(metricRoute: readonly Point[]): number {
   return pathLength(metricRoute, false)
+}
+
+/**
+ * The full point sequence actually run: waypoints joined by their real
+ * shortest path through `graph`, concatenated without duplicating the join
+ * point between legs. Falls back to a straight line for any consecutive pair
+ * the graph can't connect (no nearby node, or disconnected components) —
+ * advisory, never throws.
+ */
+export function expandRoute(waypoints: readonly Point[], graph: StreetGraph): Point[] {
+  if (waypoints.length === 0) return []
+  if (waypoints.length === 1) return [[waypoints[0]![0], waypoints[0]![1]]]
+
+  const out: Point[] = []
+  for (let i = 1; i < waypoints.length; i++) {
+    const a = waypoints[i - 1]!
+    const b = waypoints[i]!
+    const fromNode = graph.nearestNode(a, EXPAND_SNAP_M)
+    const toNode = graph.nearestNode(b, EXPAND_SNAP_M)
+    const routed = fromNode !== null && toNode !== null ? graph.shortestPath(fromNode, toNode) : null
+    const leg = routed ? routed.points : [a, b]
+    if (out.length === 0) out.push(leg[0]!)
+    for (let j = 1; j < leg.length; j++) out.push(leg[j]!)
+  }
+  return out
 }
 
 /** Nearest distance from `p` to a polyline (its closing segment included when `closed`). */

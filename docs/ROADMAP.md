@@ -6,16 +6,11 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 7 — Routable street graph & routed tracing.** Spec:
-[specs/phase-7-street-graph.md](specs/phase-7-street-graph.md). Not started.
-Build a routable graph from the already-bundled Porto street data (junction
-detection + tolerance-based connectivity repair, since the data's per-way
-simplification does not guarantee shared vertices at junctions) and use it for
-one concrete thing: **tracing snaps to the network** — clicks resolve to the
-nearest street point and consecutive clicks join via the real shortest path,
-not a straight line. Finding a closed loop shaped like the circuit (and
-routing Phase 6's suggestions) is explicitly a later, separate item — see the
-spec's *Not in scope*.
+Phase 7 (routable street graph & routed tracing) just shipped. No phase is
+speced yet for what comes next — the natural candidate is the "Later" item
+below on **finding an actual closed street loop shaped like the circuit**
+using Phase 7's graph (it needs its own spec before implementation, per the
+working method in [../CLAUDE.md](../CLAUDE.md)).
 
 ## Phases
 
@@ -112,7 +107,7 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
 - Time-sliced on the main thread (progress bar + cancel), no Web Worker, no
   Overpass, no routable graph.
 
-### Phase 7 — Routable street graph & routed tracing — `todo`
+### Phase 7 — Routable street graph & routed tracing — `done`
 
 Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
 
@@ -154,6 +149,40 @@ Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-11 — Phase 7 shipped.** Routable street graph & routed tracing.
+  `src/graph.ts` builds a `StreetGraph` once from the bundled ways:
+  `buildStreetGraph` merges way endpoints within `NODE_MERGE_M` (4 m) into
+  nodes, then a second pass lets any still-unmatched endpoint split another
+  way's interior segment (a T-junction) if one lands within tolerance —
+  repairing connectivity from the independent-per-way Douglas–Peucker
+  simplification without touching `porto-streets.json`. Routing is
+  hand-written A* (`shortestPath`), Euclidean straight-line heuristic, a
+  sorted-insert array as the open set. `nearestNode` / `nearestPointM` resolve
+  a click to the network via an expanding-radius grid search rather than
+  scanning a box sized by the caller's `maxM` up front — needed once
+  `app/trace.ts`'s `expandRoute` started asking "nearest node, no real
+  distance limit" for waypoints already known to be on the network; the naive
+  approach made that call take seconds. `app/trace.ts` gained `expandRoute`
+  (waypoints → routed polyline, straight-line fallback per leg if the graph
+  can't connect a pair); `routeLengthM`/`routeDeviation`/`routeStats` are
+  unchanged, callers just pass the expanded polyline. `app/map.ts`: trace-mode
+  clicks inside the bundled bbox resolve via `nearestPointM(_, SNAP_MAX_M=30)`
+  and are dropped if nothing is in range; outside the bbox, clicks keep
+  Phase 5's raw straight-line behaviour (no street data there). The drawn/
+  measured route is always the expanded polyline; `AppState.route` and
+  `SavedPlacement` keep storing just the waypoints, unchanged.
+  **Real-data connectivity** (the acceptance criterion this phase's spec
+  asked for): the largest connected component covers **88.3%** of the bundled
+  network's total length — a materially connected network, not a field of
+  fragments. Measured via a `componentLengthsM` export (union-find over the
+  graph's own edges) added alongside `buildStreetGraph` for this test, since
+  reconstructing connectivity from raw way endpoints outside the graph turned
+  out to under-count it badly (missed exactly the T-junction connections this
+  phase exists to add — a first version of the test wrongly reported ~28–44%
+  before that bug was found). No new dependency, no new data file, no change
+  to `SavedPlacement`'s stored shape or `PLACEMENTS_SCHEMA_VERSION`. 228 tests
+  pass.
 
 - **2026-09-11 — Phase 7 spec written.** Routable street graph & routed
   tracing. Scoped narrower than the roadmap's old "routable street graph"

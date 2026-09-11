@@ -63,6 +63,19 @@ const mapClick = (container: HTMLElement, x: number, y: number) =>
     .dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true }))
 const strokes = (container: HTMLElement) =>
   [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('stroke'))
+const routePath = (container: HTMLElement) =>
+  [...container.querySelectorAll('svg path')].find((p) => p.getAttribute('stroke') === '#1565c0')
+
+// Pixel positions on the default (unmoved) map view, pre-checked against the
+// bundled Porto street data: two points a few centimetres from real streets
+// on opposite sides of the view (so a routed path between them is long
+// enough to visibly differ from a straight line), one point ~390 m from the
+// nearest street but still inside the bundled bbox, and the container's
+// corner, which falls outside the bundled bbox entirely.
+const NEAR_STREET_A: [number, number] = [150, 170]
+const NEAR_STREET_B: [number, number] = [570, 670]
+const FAR_FROM_STREET: [number, number] = [50, 650]
+const OUTSIDE_BBOX: [number, number] = [0, 0]
 
 describe('createMapApp', () => {
   it('mounts the map with a street layer and coloured centreline segments, and tears down cleanly', () => {
@@ -126,8 +139,8 @@ describe('createMapApp — saved placements', () => {
     const app = createMapApp(container, circuits)
 
     click(container, 'trace')
-    mapClick(container, 120, 140)
-    mapClick(container, 360, 320)
+    mapClick(container, ...NEAR_STREET_A)
+    mapClick(container, ...NEAR_STREET_B)
 
     const routeStroke = strokes(container).filter((s) => s === '#1565c0')
     expect(routeStroke.length).toBeGreaterThan(0)
@@ -135,7 +148,53 @@ describe('createMapApp — saved placements', () => {
 
     click(container, 'save')
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+    // The two clicked waypoints are what's persisted, not the routed polyline.
     expect(stored[circuits[0]!.id].route).toHaveLength(2)
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('snaps clicks to the street network and draws the routed path, not a straight line', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'trace')
+    mapClick(container, ...NEAR_STREET_A)
+    mapClick(container, ...NEAR_STREET_B)
+
+    // Two waypoints, but the drawn/routed polyline follows the network, so
+    // it has far more than the 2 points a straight join would have.
+    expect(panel(container).textContent).toContain('2 points')
+    const d = routePath(container)!.getAttribute('d')!
+    const commandCount = (d.match(/[LM]/g) ?? []).length
+    expect(commandCount).toBeGreaterThan(2)
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('ignores a click with no street nearby, even inside the bundled area', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'trace')
+    mapClick(container, ...FAR_FROM_STREET)
+
+    expect(panel(container).textContent).toContain('0 point')
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('falls back to the raw clicked point outside the bundled bbox', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'trace')
+    mapClick(container, ...OUTSIDE_BBOX)
+
+    expect(panel(container).textContent).toContain('1 point')
 
     app.destroy()
     container.remove()
@@ -146,8 +205,8 @@ describe('createMapApp — saved placements', () => {
     const app = createMapApp(container, circuits)
 
     click(container, 'trace')
-    mapClick(container, 120, 140)
-    mapClick(container, 360, 320)
+    mapClick(container, ...NEAR_STREET_A)
+    mapClick(container, ...NEAR_STREET_B)
     click(container, 'study')
 
     expect(strokes(container)).not.toContain('#8a8a8a') // street layer gone

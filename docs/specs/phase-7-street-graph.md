@@ -1,6 +1,7 @@
 # Spec — Phase 7: Routable street graph & routed tracing
 
-Status: `todo`
+Status: `done` (shipped 2026-09-11 — see the ROADMAP decision log for the
+real-data connectivity figure)
 Depends on: [phase-3-street-proximity.md](phase-3-street-proximity.md),
 [phase-5-trace-and-study.md](phase-5-trace-and-study.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),
