@@ -6,29 +6,20 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**No Phase 10 spec yet.** Phase 9 shipped 2026-09-11: a crossing/corridor
-repair pass in `graph.ts` that raised real-data connectivity from 88.3% to
-**~95.3%** — real, tested, and a genuine fix for the blind spot Phase 7's
-endpoint-only repair had. But it turned out **not** to be the thing standing
-between the bundled circuits and a routed suggestion: with connectivity
-fixed, every candidate that now fully connects still gets rejected by Phase
-8's separate `MAX_LENGTH_RATIO` (1.5×) — real routed paths between points
-close in the circuit's shape detour 1.5–2× their straight-line spacing on
-Porto's real streets. All three bundled circuits still return **zero** routed
-suggestions at 1:1 scale; every suggestion shown today is still a Phase 6
-fallback, same as before Phase 9. Tuning `CORRIDOR_M` up (tried to 40m) does
-eventually push some candidates under the ratio cap, but was rejected as
-unsafe — past ~8–10m the same mechanism starts bridging streets that were
-never the same junction (caught two ways: Phase 8's own `disconnectedQuad`
-test fixture, built to model "definitely disconnected" at an 8m gap, started
-passing; and a real-data spot-check against OSM `bridge`/`viaduct` tags found
-false-merge candidates scaling up with corridor width). Candidates for a
-Phase 10 spec: deliberately revisit `MAX_LENGTH_RATIO` (a Phase 8 constant,
-out of Phase 9's scope on purpose) now that the detour-ratio numbers behind
-it are known; or accept routed loops are not viable on the bundled data at
-1:1 scale and move to a different *Later* item. Needs a decision before a
-spec gets written. Full story: the Phase 9 decision-log entries below and
-[specs/phase-9-graph-connectivity-repair.md](specs/phase-9-graph-connectivity-repair.md).
+**Phase 10 spec written, implementation next.** Phase 9 (88.3% → ~95.3%
+connectivity) found that connectivity was never the last blocker: every
+candidate that now fully connects still gets rejected by Phase 8's
+`MAX_LENGTH_RATIO` (1.5×), because real routed paths between points close in
+the circuit's shape detour 1.5–2× their straight-line spacing on Porto's real
+streets — so all three bundled circuits still return zero routed suggestions.
+Rather than loosen that cap (or the connectivity repair's own `CORRIDOR_M`,
+already tried and rejected as unsafe in Phase 9), Phase 10 changes what a
+"reject" looks like: a new best-effort loop kind that never fails, keeping
+every leg that does connect as a real street and drawing the rest as a
+visibly red gap instead of discarding the whole candidate. Directly prompted
+by user feedback on what a suggestion should look like: *"a route in the
+city, not a shape that happens to overlap streets."* Spec:
+[specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
 
 ## Phases
 
@@ -176,6 +167,24 @@ Spec: [specs/phase-9-graph-connectivity-repair.md](specs/phase-9-graph-connectiv
   was not, after all, the last blocker; see *Current priority* above and the
   decision log for the `MAX_LENGTH_RATIO` finding this phase surfaced.
 
+### Phase 10 — Best-effort routed loops (mark the gaps, don't reject) — `todo`
+
+Spec: [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
+
+- A new suggestion kind that never fails: build the loop leg by leg around a
+  Phase 6 candidate, keeping every real routed street segment and drawing any
+  leg the network can't connect as a straight line, flagged red, instead of
+  discarding the whole candidate over one bad leg (today's Phase 8 behaviour).
+- `app/trace.ts`'s `expandRoute` (already silently falls back to a straight
+  line per leg for manual tracing) becomes `expandRouteWithGaps`, reporting
+  which legs those are — so manual **Trace route** also shows red gaps, not
+  just new suggestion rows.
+- Ranks between Phase 8's fully-routed loops and the old bare
+  coverage-percentage fallback: real routed > best-effort (fewest invented
+  metres wins) > coverage-only.
+- No change to `MAX_LENGTH_RATIO`, `CORRIDOR_M`, or any other existing
+  constant — adds a new outcome tier, does not retune the old ones.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -205,6 +214,30 @@ Spec: [specs/phase-9-graph-connectivity-repair.md](specs/phase-9-graph-connectiv
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-11 — Phase 10 spec written: stop rejecting, start marking.**
+  Directly prompted by user feedback that a suggestion should read as "a
+  route in the city," not "a shape that overlaps streets" — and by Phase 9's
+  finding that Phase 8's all-or-nothing validation (every leg connects and
+  the total stays under `MAX_LENGTH_RATIO`, or the whole candidate is
+  discarded) is what's actually keeping every bundled circuit at zero routed
+  suggestions, not connectivity. Decision: add a new **best-effort loop**
+  kind that never fails — build the loop leg by leg around a Phase 6
+  candidate, keep every leg that connects by real street, and draw any leg
+  that doesn't as a straight line flagged `real: false` (rendered red)
+  instead of rejecting the candidate. Ranks between Phase 8's fully-routed
+  loops and the old bare coverage-percentage fallback, ordered by
+  `gapLengthM` (metres of invented "street") ascending. `app/trace.ts`'s
+  `expandRoute` — which already silently falls back to a straight line per
+  leg for manual tracing, just never told the caller which legs those were —
+  becomes `expandRouteWithGaps` and is reused by both manual tracing and the
+  new suggestion kind, so **Trace route** also starts showing red gaps, not
+  just new suggestion rows: one join mechanism, two callers, not two
+  implementations. No change to `MAX_LENGTH_RATIO`, `CORRIDOR_M`, or any
+  other existing constant, and no persisted gap state — gap-ness is always
+  recomputed from the current graph at render time, the same
+  recompute-don't-persist pattern Phase 3 and Phase 7 already use. Full
+  spec: `docs/specs/phase-10-best-effort-routed-loops.md`.
 
 - **2026-09-11 — Phase 9 shipped: connectivity fixed, but it wasn't the last
   blocker.** `graph.ts`'s `buildGraphCore` gained a third repair pass after
