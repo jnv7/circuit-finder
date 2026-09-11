@@ -11,7 +11,7 @@ import { resample } from '../geometry/path'
 import { PORTO_CENTER, PORTO_ZOOM, portoProjection } from '../porto'
 import { buildStreetIndex, loadStreetNetwork } from '../streets'
 import { overlayLatLngs, readout } from './overlay'
-import { LEVELS, SAMPLE_M, lapProximity, proximityColor, quantize } from './proximity'
+import { LEVELS, SAMPLE_M, lapDeviation, lapProximity, proximityColor, quantize } from './proximity'
 import { bearingFromDrag, handlePixel } from './rotate'
 import type { AppState } from './state'
 import {
@@ -461,7 +461,21 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
           })
           .then((results) => {
             if (suggester !== active) return
-            suggest = { phase: 'results', suggestions: results, selectedIndex: null }
+            // Re-label each suggestion with the *same* coverage/deviation the
+            // live map will show once it is applied, so the numbers agree.
+            const circuit = circuitById(state.circuitId)
+            const suggestions = results.map((s) => {
+              const ring = overlayLatLngs(circuit, s.placement).map((cd) => project.toLocal(cd))
+              const dev = lapDeviation(ring, streetIndex)
+              return {
+                ...s,
+                coverageFraction: lapProximity(ring, streetIndex).nearFraction,
+                meanDeviationM: dev.meanM,
+                maxDeviationM: dev.maxM,
+              }
+            })
+            suggestions.sort((a, b) => b.coverageFraction - a.coverageFraction)
+            suggest = { phase: 'results', suggestions, selectedIndex: null }
             renderPanel()
             render()
           })

@@ -61,6 +61,19 @@ describe('scoreCandidate', () => {
     expect(shifted.score).toBeLessThan(perfect.score)
   })
 
+  it('does not credit a street the circuit only crosses (wrong heading)', () => {
+    // Streets are one dense bundle of vertical lines; the circuit's top and
+    // bottom edges run horizontally across them — near, but not runnable.
+    const grid: Street[] = []
+    for (let x = 800; x <= 1200; x += 8) grid.push([[x, 600], [x, 1000]])
+    const crossIndex = buildStreetIndex(grid, 50)
+    const crossInput: SearchInput = { ...input, index: crossIndex }
+    const s = scoreCandidate(crossInput, { anchorM: ANCHOR, rotationRad: 0 }, 64)
+    // The left/right edges run along the vertical streets, the top/bottom cross
+    // them — so at most roughly half can count, and in practice less.
+    expect(s.coverage).toBeLessThan(0.6)
+  })
+
   it('is pure — same inputs, same score', () => {
     const a = scoreCandidate(input, { anchorM: ANCHOR, rotationRad: 0.2 }, 48)
     const b = scoreCandidate(input, { anchorM: ANCHOR, rotationRad: 0.2 }, 48)

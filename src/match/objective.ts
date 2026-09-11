@@ -10,14 +10,16 @@ import { cumulativeTurning, turningDistance } from '../geometry/turning'
 import { procrustesResidual } from '../geometry/procrustes'
 import type { Point } from '../geometry/types'
 import { rotate as rotateVec, scale as scaleVec } from '../geometry/vector'
-import { NEAR_M } from '../app/proximity'
+import { ALIGN_MAX_DEG, NEAR_M } from '../app/proximity'
 import type { Candidate, SearchInput } from './types'
 
 export { NEAR_M }
 /** Snap search radius for the objective, metres. */
 export const SEARCH_MAX_M = 40
+/** Heading tolerance for "runnable here", radians (see `ALIGN_MAX_DEG`). */
+export const ALIGN_MAX_RAD = (ALIGN_MAX_DEG * Math.PI) / 180
 /** Candidates below this coverage are dropped before ranking. */
-export const MIN_COVERAGE = 0.45
+export const MIN_COVERAGE = 0.4
 /** Ranking weights (scale-free — `turningDistance` is radians, the Procrustes
  *  residual is normalised by the circuit radius). */
 export const W_TURNING = 0.15
@@ -37,18 +39,19 @@ export type ScoreOptions = {
   searchMaxM?: number
   wTurning?: number
   wProcrustes?: number
+  alignMaxRad?: number
   /** Below this coverage the shape terms are skipped and `score` is just a
    *  cheap `coverage - 1` — the candidate will be dropped anyway. */
   minCoverage?: number
 }
 
-/** Pick `k` roughly evenly spaced entries from a closed ring of points. */
-function subsample(ring: readonly Point[], k: number): Point[] {
-  const n = ring.length
-  if (k >= n) return ring.map((p) => [p[0], p[1]])
-  const out: Point[] = []
-  for (let i = 0; i < k; i++) out.push(ring[Math.floor((i * n) / k)]!)
-  return out
+/** Local-tangent half-window, in ring indices, for the per-sample heading. */
+const HEADING_SPAN = 2
+
+/** `k` roughly evenly spaced indices into a closed ring of `n` points. */
+function sampleIndices(n: number, k: number): number[] {
+  if (k >= n) return Array.from({ length: n }, (_, i) => i)
+  return Array.from({ length: k }, (_, i) => Math.floor((i * n) / k))
 }
 
 /** Largest distance of any sample from the circuit's centroid-at-origin. */
@@ -74,23 +77,35 @@ export function scoreCandidate(
   const searchMaxM = opts.searchMaxM ?? SEARCH_MAX_M
   const wTurning = opts.wTurning ?? W_TURNING
   const wProcrustes = opts.wProcrustes ?? W_PROCRUSTES
+  const alignMaxRad = opts.alignMaxRad ?? ALIGN_MAX_RAD
 
-  const base = subsample(input.circuitSamplesM, samples)
-  const n = base.length
+  const ring = input.circuitSamplesM
+  const rn = ring.length
+  const idx = sampleIndices(rn, samples)
+  const n = idx.length
 
-  // Place: scale about the origin, rotate, then translate to the anchor.
-  const placed: Point[] = base.map((p) => {
-    const r = rotateVec(scaleVec(p, input.scale), c.rotationRad)
-    return [r[0] + c.anchorM[0], r[1] + c.anchorM[1]]
-  })
+  // Untransformed circuit samples (centroid ~origin) for the Procrustes fit.
+  const base: Point[] = idx.map((i) => ring[i]!)
 
+  // Place each sample (scale about origin → rotate → translate) and snap it to
+  // the nearest street that also *runs the same way* as the circuit does here.
+  const placed: Point[] = new Array(n)
   const snapped: Point[] = new Array(n)
   let near = 0
   let devSum = 0
   let devMax = 0
-  for (let i = 0; i < n; i++) {
-    const { distanceM, point } = input.index.nearestPointM(placed[i]!, searchMaxM)
-    snapped[i] = point ?? placed[i]!
+  for (let s = 0; s < n; s++) {
+    const i = idx[s]!
+    const r = rotateVec(scaleVec(ring[i]!, input.scale), c.rotationRad)
+    const p: Point = [r[0] + c.anchorM[0], r[1] + c.anchorM[1]]
+    placed[s] = p
+
+    const ahead = ring[(i + HEADING_SPAN) % rn]!
+    const behind = ring[(i - HEADING_SPAN + rn) % rn]!
+    const heading = rotateVec([ahead[0] - behind[0], ahead[1] - behind[1]], c.rotationRad)
+
+    const { distanceM, point } = input.index.nearestAlignedM(p, heading, searchMaxM, alignMaxRad)
+    snapped[s] = point ?? p
     if (distanceM < NEAR_M) near++
     devSum += distanceM
     if (distanceM > devMax) devMax = distanceM

@@ -5,7 +5,7 @@
 // the UI stays responsive. Pure (no DOM, no network). Fixed scale throughout.
 import type { Point } from '../geometry/types'
 import { portoProjection } from '../porto'
-import { MIN_COVERAGE, scoreCandidate } from './objective'
+import { ALIGN_MAX_RAD, MIN_COVERAGE, scoreCandidate } from './objective'
 import type { CandidateScore } from './objective'
 import type { Candidate, SearchInput, SearchOptions, SearchProgress, Suggestion } from './types'
 
@@ -26,6 +26,7 @@ export const DEFAULT_SEARCH_OPTIONS = {
   minCoverage: MIN_COVERAGE,
   dedupDistM: 200,
   dedupRotDeg: 12,
+  alignMaxRad: ALIGN_MAX_RAD,
 } as const
 
 type Scored = { candidate: Candidate; score: CandidateScore }
@@ -60,6 +61,7 @@ export function* searchPlacements(
     searchMaxM: o.searchMaxM,
     wTurning: o.wTurning,
     wProcrustes: o.wProcrustes,
+    alignMaxRad: o.alignMaxRad,
     minCoverage: o.minCoverage,
   }
   const { min, max } = input.bbox

@@ -137,6 +137,30 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
 
 Newest first. Each entry dated.
 
+- **2026-09-11 — Proximity made directional (Phase 3 + 6 fix).** Feedback: the
+  "on a street" test was too permissive — a stretch went green just for passing
+  within 10 m of *any* street, even one it only crosses, so the shape could
+  "hop between buildings" and still score ~85 %. And the Phase 6 suggestion
+  label (coarse-sample coverage) disagreed with the live map figure after
+  applying (88 % vs 81 %). Fixes:
+  - **Heading gate.** `StreetIndex` gained `nearestAlignedM(p, heading, maxM,
+    maxAngleRad)` — only street segments whose bearing is within `ALIGN_MAX_DEG`
+    (**35°**, compared mod 180°) of the circuit's local heading count.
+    `app/proximity`'s `segmentCoverage` uses the segment's own direction;
+    `match/objective` uses a ±2-sample central-difference tangent. A shape that
+    cuts across the blocks now scores low even where it clips street after
+    street. `alignMaxRad: Math.PI` opts out.
+  - **One source of truth for the label.** After the search returns, `app/map`
+    re-labels every suggestion with `lapProximity(...).nearFraction` and a new
+    `lapDeviation(...)` computed on the *actual* placed ring — the exact figures
+    the panel shows once "Use this" is pressed — and re-sorts by that. The
+    search's internal objective stays a fast ranking proxy.
+  - `MIN_COVERAGE` 0.45 → 0.40 so the honest (now lower) numbers still yield a
+    list. Real Porto suggestions land around **50–63 % on streets, ~10–14 m
+    avg** — lower than before, but real. Connectivity (that the aligned
+    fragments actually join into a runnable loop) still needs the routable
+    graph. 215 tests pass.
+
 - **2026-09-10 — Phase 6 shipped.** Suggested placements. An opt-in **Suggest
   placements** button under the circuit picker runs a coarse→fine translation +
   rotation sweep (fixed scale) of the chosen circuit over the bundled Porto

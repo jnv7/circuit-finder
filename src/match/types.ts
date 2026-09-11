@@ -50,4 +50,5 @@ export type SearchOptions = Partial<{
   searchMaxM: number
   wTurning: number
   wProcrustes: number
+  alignMaxRad: number
 }>

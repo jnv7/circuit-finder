@@ -8,6 +8,34 @@ Newest release first.
 
 ---
 
+## 0.7.1 — Street feedback that means something (2026-09-11)
+
+**The green now means "you could run this", not "a street is nearby".** Until
+now a stretch of the circuit lit up green whenever *any* street passed within
+about 10 m — including one it merely crosses. So a shape could zig-zag between
+buildings, clipping street after street, and still look like a great fit.
+
+From this release a stretch only counts as on-street when there's a street
+running **roughly the same direction** underneath it (within about 35°). Cut
+across the blocks and that stretch goes red, the way it should.
+
+**What changes for you:**
+
+- The live **"Near a street: NN %"** figure and the outline colours are
+  stricter. Placements you already saved will look redder where they cross
+  streets rather than follow them — that's the more honest picture, not a
+  regression.
+- **Suggested placements** are now labelled with the *same* number you'll see on
+  the map once you press **Use this** — no more "88 % in the list, 81 % on the
+  map". The suggestions for the bundled circuits come out around 50–65 % on
+  Porto streets: lower than before, but real. Porto's tangled streets just don't
+  hold a perfect Formula 1 loop, and the tool no longer pretends otherwise.
+
+It still can't guarantee the green stretches join up into one continuous
+runnable loop — that needs a proper street network, which is on the roadmap.
+
+---
+
 ## 0.7.0 — Let the tool suggest where to start (2026-09-10)
 
 **Stop hunting for a starting spot by hand.** Pick a circuit and click

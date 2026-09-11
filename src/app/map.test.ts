@@ -173,9 +173,9 @@ describe('createMapApp — saved placements', () => {
     click(container, 'suggest')
     await flush()
 
-    // The panel now shows the ranked list from the stub.
+    // The panel now shows the ranked list built from the stub's poses.
     expect(panel(container).querySelector('[data-role="suggest-list"]')).not.toBeNull()
-    expect(panel(container).textContent).toContain('82% on streets')
+    expect(panel(container).textContent).toMatch(/\d+% on streets · ~\d+ m avg/)
     const rows = panel(container).querySelectorAll('[data-role="suggest-use"]')
     expect(rows).toHaveLength(2)
 

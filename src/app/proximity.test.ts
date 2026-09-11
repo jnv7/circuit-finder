@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Point } from '../geometry/types'
 import { buildStreetIndex } from '../streets'
-import { LEVELS, lapProximity, proximityColor, quantize } from './proximity'
+import { LEVELS, lapDeviation, lapProximity, proximityColor, quantize } from './proximity'
 
 const GREEN = '#2e7d32'
 const AMBER = '#f9a825'
@@ -15,20 +15,21 @@ function translate(ring: readonly Point[], dx: number, dy: number): Point[] {
 }
 
 describe('lapProximity', () => {
+  // A thin loop hugging the street: both long edges run along it (±0/180°).
   const onStreet: Point[] = [
     [0, 0],
     [400, 0],
-    [400, 2],
-    [0, 2],
+    [400, 1],
+    [0, 1],
   ]
 
-  it('is fully covered and green when the ring lies on a street', () => {
+  it('is fully covered and green on the stretches that run along the street', () => {
     const { segments, nearFraction } = lapProximity(onStreet, streetIndex)
-    for (const s of segments) {
-      expect(s.coverage).toBeCloseTo(1)
-      expect(s.color).toBe(GREEN)
-    }
-    expect(nearFraction).toBeCloseTo(1)
+    expect(segments[0]!.coverage).toBeCloseTo(1)
+    expect(segments[0]!.color).toBe(GREEN)
+    expect(segments[2]!.coverage).toBeCloseTo(1)
+    // The 1 m end connectors run across the street, but carry ~no length weight.
+    expect(nearFraction).toBeGreaterThan(0.99)
   })
 
   it('is uncovered and red when the ring is 500 m out in open space', () => {
@@ -38,6 +39,18 @@ describe('lapProximity', () => {
       expect(s.color).toBe(RED)
     }
     expect(nearFraction).toBeCloseTo(0)
+  })
+
+  it('ignores a street that is close but runs the wrong way', () => {
+    // A segment running north, right on top of the east-west street.
+    const across: Point[] = [
+      [0, -80],
+      [0, -40],
+      [0, 40],
+      [0, 80],
+    ]
+    const { nearFraction } = lapProximity(across, streetIndex)
+    expect(nearFraction).toBeLessThan(0.15)
   })
 
   it('colours on-street segments green and off-street segments red, ~half covered', () => {
@@ -53,6 +66,39 @@ describe('lapProximity', () => {
     expect(segments[2]!.coverage).toBeCloseTo(0)
     expect(segments[2]!.color).toBe(RED)
     expect(nearFraction).toBeCloseTo(0.5, 1)
+  })
+
+  it('alignMaxRad = π disables the direction check', () => {
+    const across: Point[] = [
+      [0, -80],
+      [0, -40],
+      [0, 40],
+      [0, 80],
+    ]
+    const strict = lapProximity(across, streetIndex).nearFraction
+    const loose = lapProximity(across, streetIndex, { alignMaxRad: Math.PI }).nearFraction
+    expect(loose).toBeGreaterThan(strict)
+  })
+})
+
+describe('lapDeviation', () => {
+  const onStreet: Point[] = [
+    [0, 0],
+    [400, 0],
+    [400, 1],
+    [0, 1],
+  ]
+
+  it('is small when the lap mostly runs along the street', () => {
+    // Only the two 1 m end connectors cross the street; everything else is on it.
+    const { meanM } = lapDeviation(onStreet, streetIndex)
+    expect(meanM).toBeLessThan(2)
+  })
+
+  it('caps far-off samples at capM', () => {
+    const { meanM, maxM } = lapDeviation(translate(onStreet, 0, 500), streetIndex, { capM: 30 })
+    expect(meanM).toBe(30)
+    expect(maxM).toBe(30)
   })
 })
 

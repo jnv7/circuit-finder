@@ -143,6 +143,8 @@ export function loadStreetNetwork(): StreetNetwork {
   }
 }
 
+export type NearestResult = { distanceM: number; point: Point | null }
+
 export type StreetIndex = {
   /** Distance to the nearest street point, capped at `maxM`. */
   nearestDistanceM(p: Point, maxM: number): number
@@ -150,7 +152,15 @@ export type StreetIndex = {
    * The nearest point on any street within `maxM`, or `null` when nothing is in
    * range. `distanceM` is capped at `maxM` and equals `nearestDistanceM(p, maxM)`.
    */
-  nearestPointM(p: Point, maxM: number): { distanceM: number; point: Point | null }
+  nearestPointM(p: Point, maxM: number): NearestResult
+  /**
+   * Like `nearestPointM`, but only street segments whose heading is within
+   * `maxAngleRad` of `heading` (compared modulo π — direction of travel does not
+   * matter) are considered. Used to ask "is there a street here I could
+   * actually run *along*?", not merely "is a street nearby?". A zero-length
+   * `heading` falls back to the plain nearest point.
+   */
+  nearestAlignedM(p: Point, heading: Point, maxM: number, maxAngleRad: number): NearestResult
 }
 
 type Segment = readonly [Point, Point]
@@ -189,9 +199,15 @@ export function buildStreetIndex(ways: readonly Street[], cellM = CELL_M): Stree
   /**
    * Scan the cells covering `[p - maxM, p + maxM]` for the nearest segment. A
    * segment straddling several cells may be tested more than once — cheaper than
-   * de-duplicating, and the running minimum is unaffected.
+   * de-duplicating, and the running minimum is unaffected. When `align` is set,
+   * segments whose heading is more than `align.maxAngleRad` off `align`'s
+   * (already unit) heading, modulo π, are skipped.
    */
-  function scan(p: Point, maxM: number): { distanceM: number; point: Point | null } {
+  function scan(
+    p: Point,
+    maxM: number,
+    align?: { hx: number; hy: number; minAbsCos: number },
+  ): NearestResult {
     let best = maxM
     let bestPoint: Point | null = null
     const cx0 = Math.floor((p[0] - maxM) / cellM)
@@ -203,6 +219,13 @@ export function buildStreetIndex(ways: readonly Street[], cellM = CELL_M): Stree
         const bucket = cells.get(key(cx, cy))
         if (!bucket) continue
         for (const seg of bucket) {
+          if (align) {
+            const sx = seg[1][0] - seg[0][0]
+            const sy = seg[1][1] - seg[0][1]
+            const slen = Math.hypot(sx, sy)
+            if (slen === 0) continue
+            if (Math.abs((sx * align.hx + sy * align.hy) / slen) < align.minAbsCos) continue
+          }
           const foot = closestPointOnSegment(p, seg[0], seg[1])
           const d = distance(p, foot)
           if (d < best) {
@@ -218,5 +241,14 @@ export function buildStreetIndex(ways: readonly Street[], cellM = CELL_M): Stree
   return {
     nearestDistanceM: (p, maxM) => scan(p, maxM).distanceM,
     nearestPointM: (p, maxM) => scan(p, maxM),
+    nearestAlignedM: (p, heading, maxM, maxAngleRad) => {
+      const hlen = Math.hypot(heading[0], heading[1])
+      if (hlen === 0) return scan(p, maxM)
+      return scan(p, maxM, {
+        hx: heading[0] / hlen,
+        hy: heading[1] / hlen,
+        minAbsCos: Math.cos(maxAngleRad),
+      })
+    },
   }
 }
