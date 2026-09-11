@@ -6,13 +6,16 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Choosing the next phase.** Phases 0–6 are `done` — the acetate workflow now
-covers overlay, street-proximity feedback, save/restore, trace & study, and
-opt-in suggested placements. Nothing is scheduled next; the candidates are in
-the *Later* list below. The natural follow-on is **a routable street graph**
-(connectivity built from the bundled geometry): it turns Phase 6's geometry
-hint into a real found-loop match and gives snap-to-street for tracing. Needs a
-spec in `docs/specs/` before implementation.
+**Phase 7 — Routable street graph & routed tracing.** Spec:
+[specs/phase-7-street-graph.md](specs/phase-7-street-graph.md). Not started.
+Build a routable graph from the already-bundled Porto street data (junction
+detection + tolerance-based connectivity repair, since the data's per-way
+simplification does not guarantee shared vertices at junctions) and use it for
+one concrete thing: **tracing snaps to the network** — clicks resolve to the
+nearest street point and consecutive clicks join via the real shortest path,
+not a straight line. Finding a closed loop shaped like the circuit (and
+routing Phase 6's suggestions) is explicitly a later, separate item — see the
+spec's *Not in scope*.
 
 ## Phases
 
@@ -109,6 +112,20 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
 - Time-sliced on the main thread (progress bar + cancel), no Web Worker, no
   Overpass, no routable graph.
 
+### Phase 7 — Routable street graph & routed tracing — `todo`
+
+Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
+
+- A routable graph (`graph.ts`) built once, client-side, from the already-
+  bundled street ways — junctions merged by tolerance, T-junctions split, no
+  new data file or dependency.
+- Trace mode snaps clicks to the network and joins consecutive waypoints by
+  their real shortest path (A*) instead of a straight line; route length and
+  deviation measure that real routed path.
+- No loop-finding: the graph is not (yet) searched for a closed loop shaped
+  like the circuit, and Phase 6's suggestions stay geometry-only. That stays a
+  later item once this graph has proven itself.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -121,11 +138,9 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
   an on-demand "load streets for this area" button that fetches Overpass for the
   current view and caches it. Needed before the map can be freed *and* before
   Phase 6's search can suggest placements outside Porto.
-- A routable street graph built from the bundled geometry: connectivity, finding
-  an actual closed street loop of the circuit's shape, routing between clicked
-  points, and snapping a traced route to the network. Turns Phase 6's geometry
-  hint into a real found-loop match (turning function + Procrustes on the routed
-  loop).
+- Finding an actual closed street loop shaped like the circuit, using Phase 7's
+  routable graph, and re-scoring or replacing Phase 6's geometry-only
+  suggestions with it (turning function + Procrustes on the routed loop).
 - Editable circuit scale target by distance instead of 1:1 (composes with the
   Phase 6 search to add a scale degree of freedom).
 - Matching a freehand sketch / the user's traced route against the network to
@@ -139,6 +154,26 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-11 — Phase 7 spec written.** Routable street graph & routed
+  tracing. Scoped narrower than the roadmap's old "routable street graph"
+  Later item on purpose: build the graph and use it for **tracing only**
+  (clicks snap to the network, consecutive waypoints join via a real A*
+  shortest path instead of a straight line); finding a closed loop shaped like
+  the circuit — and using that to route Phase 6's suggestions — is split out
+  to its own later item, since it is a materially harder problem than routing
+  between two clicked points. Key design point: `porto-streets.json`'s ways
+  were Douglas–Peucker–simplified **independently per way**, so shared
+  junction vertices are not guaranteed to survive on both sides — the graph
+  repairs connectivity at runtime by tolerance (`NODE_MERGE_M` merges nearby
+  endpoints; a dangling endpoint near another way's segment interior splits
+  that way and inserts a node) rather than by touching the bundled data or its
+  extraction pipeline. New pure `graph.ts` (`buildStreetGraph`, A* routing);
+  `app/trace.ts` gains `expandRoute`; `app/map.ts` wires snap-on-click and
+  renders the routed polyline. `AppState.route` and `SavedPlacement`'s stored
+  shape are unchanged — the routed path is derived from the (static) graph,
+  never persisted. No new data file, no new dependency. Full spec:
+  `docs/specs/phase-7-street-graph.md`.
 
 - **2026-09-11 — Proximity made directional (Phase 3 + 6 fix).** Feedback: the
   "on a street" test was too permissive — a stretch went green just for passing
