@@ -17,8 +17,12 @@ real, fully street-connected closed loop around its placed outline using
 Phase 7's graph; suggestions backed by one are shown with their real loop
 length and deviation from the circuit shape (reusing `app/trace.ts`'s
 `routeStats`, not a coverage %) and, once used, seed an editable traced route
-that actually follows streets the whole way around. Falls back to Phase 6's
-old geometry-only suggestions when no candidate can form a full loop.
+that actually follows streets the whole way around. A loop that only
+connects by retracing one of its own streets (a there-and-back spur wearing
+a loop's clothes) is flagged `simple: false` and ranks below a genuinely
+non-repeating one — connected alone isn't the same as closed-in-the-useful-
+sense. Falls back to Phase 6's old geometry-only suggestions when no
+candidate can form a full loop.
 
 ## Phases
 
@@ -141,6 +145,10 @@ Spec: [specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-sugge
   its deviation from the circuit shape in metres (`app/trace.ts`'s
   `routeStats`, reused) instead of a coverage percentage; using it seeds both
   the placement and an editable traced route that already follows streets.
+- **Simple vs not.** A loop that only closes by retracing one of its own
+  streets (`RoutedLoop.simple: false`) ranks below one that never repeats a
+  metre of street — connected end to end isn't the same as a real closed
+  loop.
 - Falls back to Phase 6's old geometry-only suggestions when no candidate in
   the pool can form a full loop, so the list is never emptier than before.
 
@@ -186,7 +194,16 @@ Newest first. Each entry dated.
   candidate (stricter than tracing's advisory straight-line fallback, since a
   *suggestion* claims a real loop exists). A successful loop longer than
   `MAX_LENGTH_RATIO=1.5`× the circuit's length is still rejected (catches a
-  legitimately-connected but far-detouring loop). Routed suggestions are
+  legitimately-connected but far-detouring loop). Follow-up after the first
+  draft: connected isn't the same as a real closed loop — nothing stops the
+  path between one pair of samples from reusing a street another leg already
+  walked (a single-access side street forcing a there-and-back is the common
+  case). `graph.ts`'s `shortestPath` result gains `edgeIds` (additive, the
+  only other caller — `app/trace.ts`'s `expandRoute` — is unaffected) purely
+  so a loop attempt can flag `RoutedLoop.simple` (true iff no edge id is
+  reused across legs), with no geometry work; simple loops always rank above
+  non-simple ones, which still rank above fallback suggestions. Routed
+  suggestions are
   labelled with real loop length + deviation from the circuit shape, reusing
   `app/trace.ts`'s `routeStats` — a deliberate departure from the ROADMAP's
   older "turning function + Procrustes on the routed loop" note, in favour of

@@ -59,10 +59,21 @@ answers it by routing, not estimating.
   connect them consecutively (closing back to the first) by real shortest
   path. Succeeds or fails as a whole — see *Decisions locked*.
 - **Routed loop** — the result of a successful loop attempt: the real,
-  connected closed polyline actually run, its length, and its deviation from
-  the placed circuit outline it was built from.
+  connected closed polyline actually run, its length, its deviation from the
+  placed circuit outline it was built from, and whether it is **simple**.
+- **Simple** — a routed loop where no underlying street edge is run twice.
+  Connected is not the same as closed-in-the-useful-sense: nothing in a loop
+  attempt stops the shortest path between one pair of samples from reusing a
+  stretch of street another leg already used (a single-access side street is
+  the common case — the only way in is the only way out). That loop is
+  technically connected end to end but is really a there-and-back spur
+  wearing a loop's clothes, and is worth less to a runner than one that never
+  repeats a metre of street. `RoutedLoop.simple` names the difference
+  directly instead of leaving the user to spot it on the map.
 - **Routed suggestion** — a Phase 6 `Suggestion` with a routed loop attached.
-  Shown first, ranked by how closely the loop tracks the circuit's shape.
+  Shown before every fallback suggestion; simple ones before non-simple ones;
+  within each group, ranked by how closely the loop tracks the circuit's
+  shape.
 - **Fallback suggestion** — a Phase 6 `Suggestion` with no routed loop (none
   was found, or the search gave up trying more candidates once enough routed
   ones were found). Shown and labelled exactly as Phase 6 always has.
@@ -109,17 +120,33 @@ answers it by routing, not estimating.
   function + Procrustes on the routed loop" — written before this spec
   existed — in favour of reusing already-shipped, already-tested code that
   fits the vision's own stated principle better.)
-- **Ranked by deviation alone.** Routed suggestions are sorted by
+- **Simplicity is detected by edge reuse, cheaply.** `graph.ts`'s
+  `StreetGraph.shortestPath` gains a third field on its result, `edgeIds:
+  readonly number[]` — the internal edge indices the path walked, in order.
+  Opaque outside the graph (stable only within one `buildStreetGraph` call);
+  meaningful only for exactly this: after routing every leg of a loop
+  attempt, `simple` is true iff no edge id appears in more than one leg's
+  `edgeIds`. A* cannot revisit a node within a single leg (non-negative
+  weights), so an edge can only repeat *across* legs, never within one — the
+  check is a single pass over a `Set`, no geometry, no new dependency. This is an
+  additive, backward-compatible change to an already-shipped Phase 7 type;
+  `app/trace.ts`'s `expandRoute` (the only other caller) only reads
+  `.points`/`.lengthM` today and is unaffected.
+- **Ranked simple-first, then by deviation.** Routed suggestions sort with
+  every `simple` one before every non-simple one; within each group, by
   `meanDeviationM` ascending (ties by `maxDeviationM`). Loop length is shown
   but not an independent ranking term — a close-fitting loop is, in practice,
   close to the right length too, and one fewer arbitrary weight to tune.
+  Non-simple routed loops still rank above fallback suggestions — "connects,
+  but repeats a street" is still more honest than a geometry-only guess.
 - **Graceful fallback, not a smaller list.** The search tries candidates from
   the pool, best geometry-rank first, until either `LOOP_RESULT_COUNT` (`5`)
-  routed suggestions are found or the pool is exhausted. Whichever candidates
-  never got tried, or were tried and failed, backfill the remaining slots (in
-  their original geometry rank) as fallback suggestions — exactly Phase 6's
-  old output — so the list is never emptier than it would have been before
-  this phase. Routed suggestions always sort before fallback ones.
+  routed suggestions (simple or not — the stopping condition doesn't wait for
+  simple ones specifically, to keep the same bounded worst-case work) are
+  found or the pool is exhausted. Whichever candidates never got tried, or
+  were tried and failed, backfill the remaining slots (in their original
+  geometry rank) as fallback suggestions — exactly Phase 6's old output — so
+  the list is never emptier than it would have been before this phase.
 - **Applying a routed suggestion seeds a route, not just a placement.**
   `app/state.ts`'s `applyPlacement` gains an optional third parameter,
   `route: readonly LonLat[] = []` — when a routed suggestion is used, its
@@ -148,6 +175,8 @@ answers it by routing, not estimating.
 
 ```text
 src/
+├── graph.ts                     # shortestPath result gains edgeIds (additive)
+├── graph.test.ts                # extended
 ├── match/
 │   ├── types.ts                 # + RoutedLoop, RoutedSuggestion, LoopSearchOptions, LoopSearchProgress
 │   ├── objective.ts              # `sampleIndices` exported (reused, was module-private)
@@ -165,11 +194,29 @@ src/
     └── controls.test.ts           # extended
 ```
 
-`match/search.ts`, `match/objective.ts`'s scoring itself, `graph.ts`,
-`app/trace.ts`, `app/proximity.ts`, `streets.ts`, `placements.ts` are
-unchanged. No new data file, no new dependency.
+`match/search.ts`, `match/objective.ts`'s scoring itself, `app/trace.ts`,
+`app/proximity.ts`, `streets.ts`, `placements.ts` are unchanged. No new data
+file, no new dependency.
 
 ## New / changed code
+
+### `graph.ts`
+
+```ts
+export type StreetGraph = {
+  // … nodeCount, nodePosition, nearestNode, nearestPointM unchanged …
+  /**
+   * Real shortest path by length, or null if `from`/`to` are disconnected.
+   * `edgeIds` are the internal edge indices walked, in order — opaque outside
+   * this graph instance, stable only within one `buildStreetGraph` call;
+   * useful only for detecting whether two paths reuse the same street edge.
+   */
+  shortestPath(from: NodeId, to: NodeId): { lengthM: number; points: Point[]; edgeIds: readonly number[] } | null
+}
+```
+
+Purely additive — every existing caller destructures `.points`/`.lengthM` and
+is unaffected.
 
 ### `match/objective.ts`
 
@@ -188,6 +235,10 @@ export type RoutedLoop = {
   lengthM: number
   meanDeviationM: number
   maxDeviationM: number
+  /** True iff no underlying street edge was walked by more than one leg —
+   *  a real closed loop, not a there-and-back spur that happens to connect
+   *  end to end. */
+  simple: boolean
 }
 
 export type RoutedSuggestion = Suggestion & {
@@ -216,7 +267,8 @@ export type LoopSearchOptions = SearchOptions & Partial<{
  * (closing the loop) must connect by `graph.shortestPath` — a single miss
  * returns `null`. A successful loop longer than `opts.maxLengthRatio` × the
  * circuit's length at `scale` is also rejected (a legitimately-connected but
- * far-detouring loop).
+ * far-detouring loop). `simple` is set from whether any leg's `edgeIds`
+ * overlap another leg's — never rejected on its own, only reported.
  */
 export function tryRouteLoop(
   circuitSamplesM: readonly Point[],
@@ -229,10 +281,11 @@ export function tryRouteLoop(
 /**
  * Run Phase 6's search for a larger candidate pool (`loopCandidatePool`),
  * then try routing each (best geometry rank first) until `loopResultCount`
- * routed suggestions are found or the pool runs out. Untried or failed
- * candidates backfill the remainder as fallback (unrouted) suggestions, in
- * their original rank. Routed suggestions sort first, by `loop.meanDeviationM`
- * ascending; fallbacks keep Phase 6's rank order after them.
+ * routed suggestions — simple or not — are found or the pool runs out.
+ * Untried or failed candidates backfill the remainder as fallback (unrouted)
+ * suggestions, in their original rank. Final order: every simple routed
+ * suggestion (by `loop.meanDeviationM` ascending), then every non-simple
+ * routed one (same ordering), then fallbacks in Phase 6's rank order.
  */
 export function* searchRoutedLoops(
   input: SearchInput,
@@ -301,15 +354,19 @@ closed by repeating the first point).
 
 ### `ui/controls.ts`
 
-- `formatSuggestionLabel` branches: a routed suggestion shows
-  `"${formatDistance(loop.lengthM)} loop · ${formatDeviation(loop)} off shape"`
-  (both already-existing formatters — `formatDistance` from `app/overlay.ts`,
-  `formatDeviation` from this file, since `RoutedLoop` carries the same
-  `meanDeviationM`/`maxDeviationM` shape as `RouteStats`); a fallback
-  suggestion keeps today's `"NN% on streets · ~NN m avg"`, with a small
-  distinguishing note (e.g. a "not fully routed" qualifier) so the two kinds
-  read differently at a glance rather than looking like the same kind of
-  number.
+- `formatSuggestionLabel` branches three ways on the suggestion:
+  - simple routed loop:
+    `"${formatDistance(loop.lengthM)} closed loop · ${formatDeviation(loop)} off shape"`
+    (both already-existing formatters — `formatDistance` from
+    `app/overlay.ts`, `formatDeviation` from this file, since `RoutedLoop`
+    carries the same `meanDeviationM`/`maxDeviationM` shape as `RouteStats`);
+  - non-simple routed loop: the same, with a qualifier that it repeats a
+    street, e.g. `"${formatDistance(loop.lengthM)} loop (retraces a street) · ${formatDeviation(loop)} off shape"`
+    — visibly a lesser suggestion at a glance, not just lower in the list;
+  - fallback: today's `"NN% on streets · ~NN m avg"` unchanged, reading
+    clearly as neither of the above.
+  Exact copy is free to change during implementation; the three-way
+  distinction in the data is not.
 - Row markup / `data-role`s unchanged — only the label text and the added
   preview-route behaviour change.
 
@@ -332,38 +389,51 @@ ROADMAP decision log.
 
 All offline, default vitest environment except the jsdom smoke tests.
 
+- **`graph`**: `shortestPath`'s `edgeIds` has the same length as the number of
+  edges the returned `points` actually walks (one id per edge traversed, not
+  per point); two different `shortestPath` calls that are known to share one
+  physical street segment (a synthetic T-junction, path A→B and path A→C both
+  crossing the shared arm) report an overlapping id; two calls over disjoint
+  parts of a synthetic grid report no overlap.
 - **`match/objective`**: `sampleIndices` export has a test asserting the
   existing behaviour (`k >= n` returns every index; otherwise `k` evenly
   spread indices) now that it is public API.
 - **`match/loopSearch` — `tryRouteLoop`**: on a synthetic graph laid out as a
   clean rectangular street loop matching a candidate's placed (rectangular)
-  outline closely, returns a `RoutedLoop` with low `meanDeviationM` and
-  `lengthM` close to the outline's own perimeter; a candidate with one sample
-  in open space (no street within `snapMaxM`) → `null`; a candidate whose
-  ring crosses a gap between two disconnected components → `null`; a
-  candidate only reachable via a long detour (length > `maxLengthRatio` ×
-  target) → `null` even though every leg connects.
+  outline closely, returns a `RoutedLoop` with `simple: true`, low
+  `meanDeviationM`, and `lengthM` close to the outline's own perimeter; a
+  candidate with one sample in open space (no street within `snapMaxM`) →
+  `null`; a candidate whose ring crosses a gap between two disconnected
+  components → `null`; a candidate only reachable via a long detour (length >
+  `maxLengthRatio` × target) → `null` even though every leg connects; a
+  synthetic graph where the only way to close the loop is back out through a
+  single-access side street (two legs forced onto the same edge) → a non-null
+  `RoutedLoop` with `simple: false`.
 - **`match/loopSearch` — `searchRoutedLoops`**: on a synthetic network with
   one planted loop matching the circuit shape and several candidates that
-  cannot form a loop, the top suggestion is routed (`.loop` present) and
-  ranks before every fallback one; when *no* candidate in the pool can form a
-  loop, the returned list matches Phase 6's own output (same suggestions, no
-  `.loop`) — i.e. the graceful-fallback path reproduces Phase 6 exactly;
-  progress yields are monotonic across both `phase`s and end with
-  `done === total` on the final `phase: 'route'` step.
+  cannot form a loop, the top suggestion is both routed and simple, and ranks
+  before every fallback one; a synthetic network where the *only* routable
+  loop is non-simple ranks it above every fallback suggestion but the result
+  still reports `simple: false` on it; when *no* candidate in the pool can
+  form a loop at all, the returned list matches Phase 6's own output (same
+  suggestions, no `.loop`) — i.e. the graceful-fallback path reproduces
+  Phase 6 exactly; progress yields are monotonic across both `phase`s and end
+  with `done === total` on the final `phase: 'route'` step.
 - **`match/loopSearch` (real data, may be marked slow)**: with the real
   bundled street data, graph, and index and a real circuit at 1:1, the search
   completes under a generous CI time budget and returns 1–`LOOP_RESULT_COUNT`
-  suggestions; report how many are routed in the ROADMAP entry.
+  suggestions; report how many are routed and, of those, how many are simple,
+  in the ROADMAP entry.
 - **`app/suggest` — `createLoopSuggester`**: mirrors the existing
   `createSuggester` tests — resolves with the generator's return value,
   calls `onProgress` at least once with `done === total`, `cancel()` resolves
   `[]` with no dangling timer.
 - **`app/state`**: `applyPlacement` with a `route` argument sets it (copied,
   not aliased); omitting it still clears the route as before.
-- **`ui/controls`**: a suggestion with `.loop` renders the loop label; one
-  without renders today's coverage label; both still carry a working
-  `data-role="suggest-use"` button.
+- **`ui/controls`**: a suggestion with `.loop.simple` renders the closed-loop
+  label; one with `.loop` but `simple: false` renders the retraces-a-street
+  variant; one without `.loop` renders today's coverage label; all three
+  still carry a working `data-role="suggest-use"` button.
 - **`app/map` (jsdom)**: with `searchRoutedLoops` stubbed to return one routed
   and one fallback suggestion, **Use this** on the routed one sets both the
   overlay (`overlayLatLngs` output differs) and `routePointCount` (the seeded
@@ -377,7 +447,9 @@ All offline, default vitest environment except the jsdom smoke tests.
   Porto's streets allow it, at least one suggestion labelled with a real loop
   length and its deviation from the circuit shape in metres — not a coverage
   percentage — and using it seeds a route that visibly follows real streets
-  all the way around, editable exactly like a hand-traced one.
+  all the way around, editable exactly like a hand-traced one. A suggestion
+  that only connects by retracing a street reads visibly differently from one
+  that doesn't, and always ranks below it.
 - When no candidate in the pool can form a full loop, the list still shows
   Phase 6's old geometry-only suggestions rather than coming up empty.
 - Hovering a routed suggestion previews its real loop on the map, dashed,
@@ -387,7 +459,7 @@ All offline, default vitest environment except the jsdom smoke tests.
 - No suggestion is ever applied automatically; there is still no headline
   match score anywhere in the feature.
 - `npm run test:run` and `npm run build` pass; the real-data timing and the
-  routed-vs-fallback figures are reported in the ROADMAP decision log.
+  routed/simple-vs-fallback figures are reported in the ROADMAP decision log.
 - `docs/ROADMAP.md` (Phase 8 → `done`, dated decision-log entry, priority →
   next item) and `RELEASES.md` updated per the working method.
 
@@ -398,10 +470,13 @@ All offline, default vitest environment except the jsdom smoke tests.
   validating poses Phase 6's rigid translate+rotate search already found).
   Meaningfully harder and higher-risk; a later item if this phase's
   validate-what-Phase-6-found approach proves too limited on real Porto data.
-- **Self-intersection detection.** A routed loop that has to double back on
-  one street briefly is only caught by the `MAX_LENGTH_RATIO` length guard,
-  not detected directly. Visible to the user on the map; judgement stays with
-  them, as with any suggestion.
+- **Geometric self-intersection detection.** `simple` catches the common
+  case — a loop that reuses one of *its own* street edges — cheaply, from the
+  graph's own bookkeeping. It does not detect two *different* streets whose
+  drawn geometry happens to cross on the map without sharing a graph node (a
+  grade separation, or a rare simplification artefact) — the same known
+  limitation Phase 7 already documents for the graph itself. Visible to the
+  user on the map either way; judgement stays with them.
 - **Routing preferences** (avoid unlit streets, prefer certain road types,
   one-way streets) — unchanged from Phase 7's own *Not in scope*.
 - **Searching beyond the bundled Porto box**, any Overpass call, or searching
