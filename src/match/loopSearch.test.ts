@@ -274,7 +274,7 @@ describe('searchRoutedLoops', () => {
 
 describe('searchRoutedLoops — real Porto data', () => {
   it(
-    'completes within a generous budget and reports how many suggestions routed',
+    'completes within a generous budget for all three bundled circuits and reports how many suggestions routed',
     () => {
       const network = loadStreetNetwork()
       const index = buildStreetIndex(network.ways)
@@ -286,28 +286,38 @@ describe('searchRoutedLoops — real Porto data', () => {
         min: [Math.min(sw[0], ne[0]), Math.min(sw[1], ne[1])] as Point,
         max: [Math.max(sw[0], ne[0]), Math.max(sw[1], ne[1])] as Point,
       }
-      const circuit = loadMetricCircuits()[0]!
-      const input: SearchInput = {
-        circuitSamplesM: resample(circuit.metricCentreline, 5),
-        scale: 1,
-        index,
-        bbox,
+
+      for (const circuit of loadMetricCircuits()) {
+        const input: SearchInput = {
+          circuitSamplesM: resample(circuit.metricCentreline, 5),
+          scale: 1,
+          index,
+          bbox,
+        }
+
+        const started = performance.now()
+        const { suggestions } = drain(searchRoutedLoops(input, graph))
+        const elapsedMs = performance.now() - started
+        const routedCount = suggestions.filter((s) => s.loop).length
+        const simpleCount = suggestions.filter((s) => s.loop?.simple).length
+        // Reported in the ROADMAP decision-log entry. Phase 9's crossing/
+        // corridor repair raised real connectivity from 88.3% to ~95%, but as
+        // of this phase every bundled circuit still routes 0 — the surviving
+        // blocker turned out to be Phase 8's MAX_LENGTH_RATIO cap, not
+        // connectivity: even a candidate whose every leg *does* connect after
+        // Phase 9's fix still detours far enough in Porto's real street
+        // layout to land 1.5-2x over the circuit's length. Not asserting a
+        // routed count here on purpose — this test's job is an honest real-
+        // data report, same as Phase 8's own (which also found 0 and said so).
+        console.log(
+          `searchRoutedLoops (real data) — ${circuit.id}: ${elapsedMs.toFixed(0)} ms, ` +
+            `${routedCount}/${suggestions.length} routed (${simpleCount} simple)`,
+        )
+
+        expect(suggestions.length).toBeGreaterThanOrEqual(1)
+        expect(suggestions.length).toBeLessThanOrEqual(LOOP_RESULT_COUNT)
       }
-
-      const started = performance.now()
-      const { suggestions } = drain(searchRoutedLoops(input, graph))
-      const elapsedMs = performance.now() - started
-      const routedCount = suggestions.filter((s) => s.loop).length
-      const simpleCount = suggestions.filter((s) => s.loop?.simple).length
-      // Reported in the ROADMAP decision-log entry.
-      console.log(
-        `searchRoutedLoops (real data): ${elapsedMs.toFixed(0)} ms, ` +
-          `${routedCount}/${suggestions.length} routed (${simpleCount} simple)`,
-      )
-
-      expect(suggestions.length).toBeGreaterThanOrEqual(1)
-      expect(suggestions.length).toBeLessThanOrEqual(LOOP_RESULT_COUNT)
     },
-    120_000,
+    180_000,
   )
 })

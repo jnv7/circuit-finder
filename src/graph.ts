@@ -4,9 +4,14 @@
 // that share a real OSM junction are not guaranteed to share an exact vertex
 // after simplification. Construction repairs connectivity by tolerance
 // instead of touching the bundled data: nearby way endpoints merge into one
-// node, and a still-unmatched endpoint that lands near another way's interior
-// splits that way and creates a node there. See
-// docs/specs/phase-7-street-graph.md.
+// node, a still-unmatched endpoint that lands near another way's interior
+// splits that way and creates a node there (Phase 7), and two ways that
+// cross — or pass within a small corridor width of each other — anywhere
+// along their length connect there too (Phase 9), which is what independent
+// per-way simplification most often erases at a real junction: neither
+// through-way's simplified shape needs the shared vertex to stay within its
+// own tolerance, so both drop it. See docs/specs/phase-7-street-graph.md and
+// docs/specs/phase-9-graph-connectivity-repair.md.
 import type { Point } from './geometry/types'
 import { pathLength } from './geometry/path'
 import { distance } from './geometry/vector'
@@ -17,8 +22,57 @@ export type NodeId = number
 /** Endpoints within this distance of each other merge into one node. */
 export const NODE_MERGE_M = 4
 
+/**
+ * Two ways' segments closer than this (or crossing) connect there too. Kept
+ * at the spec's conservative starting point: real-data testing found this
+ * width bridges the large majority of erased junctions (largest connected
+ * component 88.3% → ~95%) with contained false-merge exposure, and going
+ * materially wider (tried up to 40m) still didn't clear Phase 8's separate
+ * `MAX_LENGTH_RATIO` cap for the bundled circuits — the network needs
+ * unrealistic widths before real detours shrink that far, so a bigger
+ * corridor buys mostly extra false-merge risk, not extra success. See the
+ * ROADMAP decision log for both the connectivity and the detour-ratio
+ * numbers behind this call — the ratio finding is left for a later phase to
+ * act on, not "fixed" by stretching this constant.
+ */
+export const CORRIDOR_M = 6
+
+/** A crossing this close to a known grade-separated location is not merged. */
+export const EXCLUDE_RADIUS_M = 25
+
+/**
+ * Known grade-separated crossings in the bundled bbox (bridges carrying one
+ * street over another) where a purely-2D crossing test would wrongly connect
+ * two roads that never actually meet — there is no elevation data to tell
+ * them apart otherwise (see VISION.md's "no elevation" non-goal). Porto-frame
+ * metres (`portoProjection`), the same frame `Street` points already arrive
+ * in, so this stays a plain-data constant with no extra runtime projection.
+ * Found by cross-checking the built graph's pass-3 crossings against OSM
+ * `bridge=yes`/`bridge=viaduct` ways in the bundled bbox (Overpass), keeping
+ * the ones carrying a road/path over another rather than over a river or
+ * open ground (where a 2D crossing test has nothing to wrongly connect to).
+ */
+const GRADE_SEPARATED_EXCLUSIONS: readonly Point[] = [
+  [3969.2, 2558.8], // Viaduto da Areosa
+  [4130.6, 693.4], // Rua das Linhas de Torres / Alameda de Cartes viaduct
+  [4286.4, 878.4], // Rua das Linhas de Torres / Alameda de Cartes viaduct
+  [1866.9, -1734.6], // Rua do General Sousa Dias / Ribeira gorge footway viaducts
+  [-109.1, -2113.1], // Via Engenheiro Edgar Cardoso viaduct
+  [2299.9, -1871.7], // Ponte Infante Dom Henrique (crosses the Douro)
+  [1640.9, -1990.4], // Ponte Luiz I, both decks (crosses the Douro)
+  [3018.8, 2560.9], // Estrada Exterior/Interior da Circunvalação grade separation
+]
+
 /** Grid cell size for the post-build node/edge nearest-point indices. */
 const INDEX_CELL_M = 50
+
+export type GraphBuildOptions = {
+  nodeMergeM?: number
+  corridorM?: number
+  excludeRadiusM?: number
+  /** Overrides `GRADE_SEPARATED_EXCLUSIONS`, for testing the exclusion mechanism. */
+  exclusions?: readonly Point[]
+}
 
 export type StreetGraph = {
   nodeCount: number
@@ -77,6 +131,67 @@ function projectOntoSegment(p: Point, a: Point, b: Point): { point: Point; t: nu
   return { point: [a[0] + t * dx, a[1] + t * dy], t }
 }
 
+function midpoint(p: Point, q: Point): Point {
+  return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]
+}
+
+/**
+ * True intersection point of two segments, with each one's parameter (0 at
+ * its first point, 1 at its second) at that point — or `null` if they don't
+ * cross within their bounds (including the degenerate parallel/collinear
+ * case, left to the closest-approach fallback below).
+ */
+function segmentIntersection(
+  a1: Point,
+  a2: Point,
+  b1: Point,
+  b2: Point,
+): { point: Point; tA: number; tB: number } | null {
+  const rx = a2[0] - a1[0]
+  const ry = a2[1] - a1[1]
+  const sx = b2[0] - b1[0]
+  const sy = b2[1] - b1[1]
+  const denom = rx * sy - ry * sx
+  if (denom === 0) return null
+  const qpx = b1[0] - a1[0]
+  const qpy = b1[1] - a1[1]
+  const t = (qpx * sy - qpy * sx) / denom
+  const u = (qpx * ry - qpy * rx) / denom
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null
+  return { point: [a1[0] + t * rx, a1[1] + t * ry], tA: t, tB: u }
+}
+
+/**
+ * How close two segments (from different ways) come to each other: 0 (an
+ * actual crossing) or the shortest endpoint-to-opposite-segment distance
+ * otherwise, standard for two straight segments. Returns a shared point
+ * (the crossing, or the midpoint of the two closest points) plus each
+ * segment's parameter there, for splitting both ways at once.
+ */
+function segSegClosestApproach(
+  a1: Point,
+  a2: Point,
+  b1: Point,
+  b2: Point,
+): { point: Point; tA: number; tB: number; distanceM: number } {
+  const hit = segmentIntersection(a1, a2, b1, b2)
+  if (hit) return { point: hit.point, tA: hit.tA, tB: hit.tB, distanceM: 0 }
+
+  type Candidate = { tA: number; tB: number; point: Point; d: number }
+  const fromA = (tA: number, aPoint: Point): Candidate => {
+    const { point, t } = projectOntoSegment(aPoint, b1, b2)
+    return { tA, tB: t, point: midpoint(aPoint, point), d: distance(aPoint, point) }
+  }
+  const fromB = (tB: number, bPoint: Point): Candidate => {
+    const { point, t } = projectOntoSegment(bPoint, a1, a2)
+    return { tA: t, tB, point: midpoint(point, bPoint), d: distance(bPoint, point) }
+  }
+  const candidates: Candidate[] = [fromA(0, a1), fromA(1, a2), fromB(0, b1), fromB(1, b2)]
+  let best = candidates[0]!
+  for (const c of candidates) if (c.d < best.d) best = c
+  return { point: best.point, tA: best.tA, tB: best.tB, distanceM: best.d }
+}
+
 /** A uniform grid over single points, for tolerance-radius nearest queries. */
 function buildPointGrid(cellM: number): {
   insert(id: number, p: Point): void
@@ -116,7 +231,7 @@ function buildPointGrid(cellM: number): {
 function buildSegmentGrid(
   segments: ReadonlyArray<{ a: Point; b: Point }>,
   cellM: number,
-): { near(p: Point, maxM: number): number[] } {
+): { near(p: Point, maxM: number): number[]; nearSegment(a: Point, b: Point, maxM: number): number[] } {
   const cells = new Map<string, number[]>()
   const key = (cx: number, cy: number): string => `${cx},${cy}`
   for (let idx = 0; idx < segments.length; idx++) {
@@ -134,20 +249,41 @@ function buildSegmentGrid(
       }
     }
   }
-  return {
-    near(p, maxM) {
-      const out: number[] = []
-      const cx0 = Math.floor((p[0] - maxM) / cellM)
-      const cx1 = Math.floor((p[0] + maxM) / cellM)
-      const cy0 = Math.floor((p[1] - maxM) / cellM)
-      const cy1 = Math.floor((p[1] + maxM) / cellM)
-      for (let cx = cx0; cx <= cx1; cx++) {
-        for (let cy = cy0; cy <= cy1; cy++) {
-          const bucket = cells.get(key(cx, cy))
-          if (bucket) out.push(...bucket)
+  function cellsInBox(minX: number, maxX: number, minY: number, maxY: number): number[] {
+    const out: number[] = []
+    const seen = new Set<number>()
+    const cx0 = Math.floor(minX / cellM)
+    const cx1 = Math.floor(maxX / cellM)
+    const cy0 = Math.floor(minY / cellM)
+    const cy1 = Math.floor(maxY / cellM)
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const bucket = cells.get(key(cx, cy))
+        if (!bucket) continue
+        for (const idx of bucket) {
+          if (!seen.has(idx)) {
+            seen.add(idx)
+            out.push(idx)
+          }
         }
       }
-      return out
+    }
+    return out
+  }
+  return {
+    near(p, maxM) {
+      return cellsInBox(p[0] - maxM, p[0] + maxM, p[1] - maxM, p[1] + maxM)
+    },
+    /** Candidates within `maxM` of anywhere along segment a-b, not just its
+     *  endpoints — needed for a long, mostly-straight simplified way whose
+     *  crossing with another way falls well past either endpoint. */
+    nearSegment(a, b, maxM) {
+      return cellsInBox(
+        Math.min(a[0], b[0]) - maxM,
+        Math.max(a[0], b[0]) + maxM,
+        Math.min(a[1], b[1]) - maxM,
+        Math.max(a[1], b[1]) + maxM,
+      )
     },
   }
 }
@@ -163,7 +299,13 @@ type GraphCore = {
  * `componentLengthsM` (the latter needs the raw edge list to measure
  * connectivity and would otherwise have to redo this work from scratch).
  */
-function buildGraphCore(ways: readonly Street[], nodeMergeM: number): GraphCore {
+function buildGraphCore(
+  ways: readonly Street[],
+  nodeMergeM: number,
+  corridorM: number,
+  excludeRadiusM: number,
+  exclusions: readonly Point[],
+): GraphCore {
   // --- Pass 1: merge way endpoints within nodeMergeM of each other ---------
   type EndpointRef = { way: number; end: 0 | 1 }
   const endpoints: EndpointRef[] = []
@@ -222,6 +364,58 @@ function buildGraphCore(ways: readonly Street[], nodeMergeM: number): GraphCore 
       const s = allSegments[best.segIdx]!
       const { t } = projectOntoSegment(p, s.a, s.b)
       splits.push({ way: s.way, seg: s.seg, t, point: best.point, clusterRoot: root })
+    }
+  }
+
+  // --- Pass 3: two different ways crossing, or passing within corridorM of
+  // each other, anywhere along their length — not just at an endpoint.
+  // Independent per-way simplification tends to erase exactly this: a real
+  // OSM junction vertex that neither through-way's simplified shape needs to
+  // stay within its own tolerance. Each qualifying pair splits *both* ways at
+  // their shared point, using a synthetic cluster root (outside the
+  // endpoints union-find's index range) so the two splits resolve to the
+  // same node, same as an ordinary shared-root split from pass 1/2. ---------
+  if (corridorM > 0) {
+    // A crossing right at (or very near) a way's own first/last vertex is
+    // already pass 1/2's job (endpoint-endpoint or endpoint-into-interior) —
+    // without this guard, the true-intersection case below finds that exact
+    // shared point again and creates a second, redundant node on top of it.
+    const nearAnyWayEndpoint = (p: Point, way: Street): boolean =>
+      distance(p, way[0]!) <= nodeMergeM || distance(p, way[way.length - 1]!) <= nodeMergeM
+
+    // At most one connection per *pair of ways* (their single closest
+    // approach), not one per pair of segments — two ways that run alongside
+    // each other for a stretch (a footway beside its road, the common case)
+    // would otherwise rack up a connection every few metres along the whole
+    // run, instead of the one real meeting point a genuine junction is.
+    type Approach = { segIdx: number; seg2Idx: number; tA: number; tB: number; point: Point; distanceM: number }
+    const bestByWayPair = new Map<string, Approach>()
+    const corridorGrid = buildSegmentGrid(allSegments, Math.max(corridorM, 1))
+    for (let i = 0; i < allSegments.length; i++) {
+      const s = allSegments[i]!
+      for (const j of corridorGrid.nearSegment(s.a, s.b, corridorM)) {
+        if (j <= i) continue // each unordered segment pair once
+        const s2 = allSegments[j]!
+        if (s2.way === s.way) continue // a way never splits against itself
+        const approach = segSegClosestApproach(s.a, s.b, s2.a, s2.b)
+        if (approach.distanceM > corridorM) continue
+        const key = s.way < s2.way ? `${s.way}:${s2.way}` : `${s2.way}:${s.way}`
+        const existing = bestByWayPair.get(key)
+        if (!existing || approach.distanceM < existing.distanceM) {
+          bestByWayPair.set(key, { segIdx: i, seg2Idx: j, tA: approach.tA, tB: approach.tB, point: approach.point, distanceM: approach.distanceM })
+        }
+      }
+    }
+
+    let nextSyntheticRoot = endpoints.length
+    for (const best of bestByWayPair.values()) {
+      const s = allSegments[best.segIdx]!
+      const s2 = allSegments[best.seg2Idx]!
+      if (nearAnyWayEndpoint(best.point, ways[s.way]!) || nearAnyWayEndpoint(best.point, ways[s2.way]!)) continue
+      if (exclusions.some((ex) => distance(ex, best.point) <= excludeRadiusM)) continue
+      const root = nextSyntheticRoot++
+      splits.push({ way: s.way, seg: s.seg, t: best.tA, point: best.point, clusterRoot: root })
+      splits.push({ way: s2.way, seg: s2.seg, t: best.tB, point: best.point, clusterRoot: root })
     }
   }
 
@@ -310,11 +504,14 @@ function buildGraphCore(ways: readonly Street[], nodeMergeM: number): GraphCore 
 }
 
 /** Build once from the decoded, projected ways (same input as buildStreetIndex). */
-export function buildStreetGraph(
-  ways: readonly Street[],
-  opts?: { nodeMergeM?: number },
-): StreetGraph {
-  const { nodePositions, edges, adjacency } = buildGraphCore(ways, opts?.nodeMergeM ?? NODE_MERGE_M)
+export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptions): StreetGraph {
+  const { nodePositions, edges, adjacency } = buildGraphCore(
+    ways,
+    opts?.nodeMergeM ?? NODE_MERGE_M,
+    opts?.corridorM ?? CORRIDOR_M,
+    opts?.excludeRadiusM ?? EXCLUDE_RADIUS_M,
+    opts?.exclusions ?? GRADE_SEPARATED_EXCLUSIONS,
+  )
 
   // Cumulative arc length at each vertex of every edge, for nearestPointM.
   const edgeCumLength: number[][] = edges.map((e) => {
@@ -473,8 +670,14 @@ export function buildStreetGraph(
  * to measure how much of the network one component reaches after
  * tolerance-based connectivity repair — not part of the app's routing path.
  */
-export function componentLengthsM(ways: readonly Street[], opts?: { nodeMergeM?: number }): number[] {
-  const { nodePositions, edges } = buildGraphCore(ways, opts?.nodeMergeM ?? NODE_MERGE_M)
+export function componentLengthsM(ways: readonly Street[], opts?: GraphBuildOptions): number[] {
+  const { nodePositions, edges } = buildGraphCore(
+    ways,
+    opts?.nodeMergeM ?? NODE_MERGE_M,
+    opts?.corridorM ?? CORRIDOR_M,
+    opts?.excludeRadiusM ?? EXCLUDE_RADIUS_M,
+    opts?.exclusions ?? GRADE_SEPARATED_EXCLUSIONS,
+  )
   const parent = Array.from({ length: nodePositions.length }, (_, i) => i)
   const find = (x: number): number => {
     while (parent[x] !== x) {

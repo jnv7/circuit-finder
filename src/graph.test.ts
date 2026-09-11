@@ -155,6 +155,89 @@ describe('buildStreetGraph', () => {
   })
 })
 
+describe('buildStreetGraph — crossing/corridor repair (Phase 9)', () => {
+  it('connects two ways that cross mid-segment with no shared vertex — which Phase 7 alone misses', () => {
+    const ways: Street[] = [
+      [[0, 0], [100, 0]], // horizontal
+      [[50, -50], [50, 50]], // vertical, crosses the first at (50, 0)
+    ]
+    const withoutPass3 = buildStreetGraph(ways, { corridorM: 0 })
+    const a0 = withoutPass3.nearestNode([0, 0], 0.001)!
+    const b0 = withoutPass3.nearestNode([50, 50], 0.001)!
+    expect(withoutPass3.shortestPath(a0, b0)).toBeNull() // Phase 7's endpoint-only repair misses this
+
+    const withPass3 = buildStreetGraph(ways)
+    const a = withPass3.nearestNode([0, 0], 0.001)!
+    const b = withPass3.nearestNode([50, 50], 0.001)!
+    const path = withPass3.shortestPath(a, b)!
+    expect(path).not.toBeNull()
+    expect(path.lengthM).toBeCloseTo(50 + 50, 6) // along to (50,0), then up to (50,50)
+  })
+
+  it('connects two ways that pass within corridorM of each other in their interior, without crossing', () => {
+    // The two ways' middle vertices — (50, 0) and (50, 5) — sit 5 m apart:
+    // beyond nodeMergeM (4 m, so Phase 7 alone leaves them disconnected) but
+    // within corridorM (6 m). Both are interior vertices of their own way
+    // (shared between two of that way's segments), clear of either way's
+    // overall first/last point, so this exercises the near-miss path
+    // specifically, not an endpoint case.
+    const way0: Street = [[0, 0], [50, 0], [100, 0]]
+    const way1: Street = [[20, 5], [50, 5], [80, 5]]
+    const withoutPass3 = buildStreetGraph([way0, way1], { corridorM: 0 })
+    const a0 = withoutPass3.nearestNode([0, 0], 0.001)!
+    const b0 = withoutPass3.nearestNode([80, 5], 0.001)!
+    expect(withoutPass3.shortestPath(a0, b0)).toBeNull()
+
+    const graph = buildStreetGraph([way0, way1], { corridorM: 6 })
+    const a = graph.nearestNode([0, 0], 0.001)!
+    const b = graph.nearestNode([80, 5], 0.001)!
+    expect(graph.shortestPath(a, b)).not.toBeNull()
+  })
+
+  it('does not connect two ways passing farther apart than corridorM', () => {
+    const way0: Street = [[0, 0], [50, 0], [100, 0]]
+    const way1: Street = [[20, 8], [50, 8], [80, 8]] // 8 m apart, corridorM is 6
+    const graph = buildStreetGraph([way0, way1], { corridorM: 6 })
+    const a = graph.nearestNode([0, 0], 0.001)!
+    const b = graph.nearestNode([80, 8], 0.001)!
+    expect(graph.shortestPath(a, b)).toBeNull()
+  })
+
+  it('leaves an excluded crossing disconnected even though it is within corridorM', () => {
+    const way0: Street = [[0, 0], [50, 0], [100, 0]]
+    const way1: Street = [[20, 5], [50, 5], [80, 5]] // same near-miss as above, point ~[50, 2.5]
+    const graph = buildStreetGraph([way0, way1], {
+      corridorM: 6,
+      exclusions: [[50, 2.5]],
+      excludeRadiusM: 5,
+    })
+    const a = graph.nearestNode([0, 0], 0.001)!
+    const b = graph.nearestNode([80, 5], 0.001)!
+    expect(graph.shortestPath(a, b)).toBeNull()
+  })
+
+  it('property: adding the crossing/corridor pass never shrinks the largest connected component', () => {
+    fc.assert(
+      fc.property(arbPolygon(4, 12), arbPolygon(4, 12), (poly1, poly2) => {
+        const toWays = (poly: Point[]): Street[] =>
+          poly.map((p, i) => [p, poly[(i + 1) % poly.length]!])
+        const ways = [...toWays(poly1), ...toWays(poly2)]
+
+        const without = componentLengthsM(ways, { corridorM: 0 })
+        const withPass3 = componentLengthsM(ways, { corridorM: 6 })
+        const totalWithout = without.reduce((s, v) => s + v, 0)
+        const totalWith = withPass3.reduce((s, v) => s + v, 0)
+        // Adding edges only ever merges or preserves components, never splits
+        // them, so total network length is unchanged and the largest share
+        // can only stay the same or grow.
+        expect(totalWith).toBeCloseTo(totalWithout, 6)
+        expect(withPass3[0]! / totalWith).toBeGreaterThanOrEqual(without[0]! / totalWithout - 1e-9)
+      }),
+      { seed: 7, numRuns: 50 },
+    )
+  })
+})
+
 describe('buildStreetGraph (real data)', () => {
   it('is materially connected: the largest component covers most of the network length', () => {
     const network = loadStreetNetwork()
@@ -163,9 +246,9 @@ describe('buildStreetGraph (real data)', () => {
     const share = sizes[0]! / totalLengthM
     // eslint-disable-next-line no-console
     console.log(`largest connected component: ${(share * 100).toFixed(1)}% of network length`)
-    // Measured on the bundled data at ~88%: a materially-connected network,
-    // not a field of fragments. Floor kept comfortably below that so minor
-    // future edits to the bundled data don't make this test flaky.
-    expect(share).toBeGreaterThan(0.75)
+    // Phase 7 measured ~88% with endpoint-only repair; Phase 9's crossing/
+    // corridor pass raised it to ~95%. Floor kept comfortably below both so
+    // minor future edits to the bundled data don't make this test flaky.
+    expect(share).toBeGreaterThan(0.9)
   })
 })

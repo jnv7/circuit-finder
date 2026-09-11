@@ -8,6 +8,27 @@ Newest release first.
 
 ---
 
+## 0.9.1 — Porto's street map understands itself better (2026-09-11)
+
+**Nothing changes on screen yet — this release is about why some good-looking
+loops still don't come back as a real connected route.** Investigating that
+question turned up a real gap: two streets that cross each other were
+sometimes treated as unconnected, because the bundled street data was
+simplified street-by-street and occasionally lost the exact point where two
+of them meet. The street network circuit-finder builds internally now catches
+those crossings too, so more of Porto's real streets are correctly understood
+as joined up.
+
+**Why you don't see new suggestions yet:** fixing that wasn't enough on its
+own — the routes that do connect after this fix still tend to wind further
+out of their way than the loop-finder currently allows, on Porto's hillier,
+less grid-like streets. So the honest state, for now, is that **Suggest
+placements** still shows the same coverage-percentage suggestions as before
+this release, not new fully-connected loops. That next piece — how far a real
+route is allowed to detour — is the open question for whatever comes next.
+
+---
+
 ## 0.9.0 — Suggestions that check if the loop is actually real (2026-09-11)
 
 **"Suggest placements" now tries to prove each spot is actually runnable, not

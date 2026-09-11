@@ -6,24 +6,29 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**No Phase 9 spec yet.** Phase 8 (routed loop suggestions) shipped
-2026-09-11 — see the decision log below. Its own real-data measurement is a
-strong candidate driver for whatever comes next: at 1:1 scale, **none** of
-the three bundled circuits (`hungaroring`, `silverstone`, `catalunya`) found
-even one routable loop in the bundled Porto street data — every suggestion
-shown today is still a Phase 6 fallback. The cause is street-network
-fragmentation (Phase 7's own 88.3%-largest-component figure), not a bug: a
-circuit-shaped ring is likely to clip at least one of the smaller
-disconnected fragments scattered through the bundled data. Candidates for the
-next spec, roughly in order of how directly they address that finding:
-improving the bundled street data's connectivity (a `porto-streets.json`
-extraction/simplification change, not an app change); relaxing
-`LOOP_SNAP_MAX_M`/adding a small per-leg straight-line tolerance so a routed
-loop can bridge a short gap without failing outright (a deliberate departure
-from this phase's "no silent straight-line patching" decision, so needs its
-own spec); or moving to a different *Later* item entirely (see below) if
-routed loops are judged not worth chasing further on the current data. Needs
-a decision before a spec gets written.
+**No Phase 10 spec yet.** Phase 9 shipped 2026-09-11: a crossing/corridor
+repair pass in `graph.ts` that raised real-data connectivity from 88.3% to
+**~95.3%** — real, tested, and a genuine fix for the blind spot Phase 7's
+endpoint-only repair had. But it turned out **not** to be the thing standing
+between the bundled circuits and a routed suggestion: with connectivity
+fixed, every candidate that now fully connects still gets rejected by Phase
+8's separate `MAX_LENGTH_RATIO` (1.5×) — real routed paths between points
+close in the circuit's shape detour 1.5–2× their straight-line spacing on
+Porto's real streets. All three bundled circuits still return **zero** routed
+suggestions at 1:1 scale; every suggestion shown today is still a Phase 6
+fallback, same as before Phase 9. Tuning `CORRIDOR_M` up (tried to 40m) does
+eventually push some candidates under the ratio cap, but was rejected as
+unsafe — past ~8–10m the same mechanism starts bridging streets that were
+never the same junction (caught two ways: Phase 8's own `disconnectedQuad`
+test fixture, built to model "definitely disconnected" at an 8m gap, started
+passing; and a real-data spot-check against OSM `bridge`/`viaduct` tags found
+false-merge candidates scaling up with corridor width). Candidates for a
+Phase 10 spec: deliberately revisit `MAX_LENGTH_RATIO` (a Phase 8 constant,
+out of Phase 9's scope on purpose) now that the detour-ratio numbers behind
+it are known; or accept routed loops are not viable on the bundled data at
+1:1 scale and move to a different *Later* item. Needs a decision before a
+spec gets written. Full story: the Phase 9 decision-log entries below and
+[specs/phase-9-graph-connectivity-repair.md](specs/phase-9-graph-connectivity-repair.md).
 
 ## Phases
 
@@ -153,6 +158,24 @@ Spec: [specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-sugge
 - Falls back to Phase 6's old geometry-only suggestions when no candidate in
   the pool can form a full loop, so the list is never emptier than before.
 
+### Phase 9 — Street graph connectivity repair (crossing detection) — `done`
+
+Spec: [specs/phase-9-graph-connectivity-repair.md](specs/phase-9-graph-connectivity-repair.md).
+
+- A third connectivity-repair pass in `graph.ts`: detects two ways crossing or
+  passing within `CORRIDOR_M` (6m) of each other in their middle (not just at
+  endpoints), splitting both there — real connected-component share on the
+  bundled data: 88.3% → ~95.3%.
+- A short hardcoded exclusion list (`GRADE_SEPARATED_EXCLUSIONS`) for known
+  grade-separated crossings (the Douro bridges, a few viaducts) in the
+  bundled bbox, so the 2D crossing test doesn't merge roads that only pass
+  over/under each other.
+- No change to `porto-streets.json` or its extraction pipeline — repair stays
+  at graph-build time, same principle as Phase 7.
+- **Did not** unlock a routed suggestion for any bundled circuit — connectivity
+  was not, after all, the last blocker; see *Current priority* above and the
+  decision log for the `MAX_LENGTH_RATIO` finding this phase surfaced.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -182,6 +205,111 @@ Spec: [specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-sugge
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-11 — Phase 9 shipped: connectivity fixed, but it wasn't the last
+  blocker.** `graph.ts`'s `buildGraphCore` gained a third repair pass after
+  Phase 7's endpoint-merge and endpoint-into-interior split: for every pair
+  of segments from different ways, a true segment-to-segment closest-approach
+  test (`segSegClosestApproach` — 0 if they cross, else the minimum of the
+  four endpoint-to-opposite-segment distances) connects them if within
+  `CORRIDOR_M`, at their actual crossing point or closest-approach midpoint.
+  Deduped to **one connection per pair of ways** (the single closest
+  approach), not one per segment pair — an early version created ~30k+
+  crossings by reconnecting the same two ways repeatedly wherever a footway
+  ran alongside its road, which both bloated the graph and multiplied
+  false-merge exposure for no connectivity benefit. A `nearAnyWayEndpoint`
+  guard skips any crossing landing within `NODE_MERGE_M` of either way's own
+  first/last point, since that case is already Phase 7's job — without it,
+  pass 3 re-discovered ordinary shared endpoints as "crossings" and created a
+  redundant node on top of every one (broke `nodeCount` on several of Phase
+  7's own synthetic tests before this guard was added).
+  **Real-data result:** largest connected component **88.3% → 95.3%**
+  (`graph.test.ts`'s floor raised from 0.75 to 0.9 accordingly) — confirmed a
+  genuine fix, not a tuning artefact, by spot-checking two of the largest
+  now-merged fragments (a Boavista-area residential grid, the Ribeira/Ponte
+  Luiz I hillside) against live OSM data via Overpass: both are real,
+  connected streets in the source data that the bundled graph had shown as
+  isolated islands.
+  **The acceptance bar this phase was written for — at least one bundled
+  circuit returning a routed suggestion — was not reached.** Diagnosing why,
+  candidate by candidate: even once a candidate's every leg connects
+  (`connectFail: 0`), Phase 8's `MAX_LENGTH_RATIO` (1.5×) still rejects it —
+  the real routed length came out 1.5–2× the circuit's length at
+  `CORRIDOR_M=6`. Raising `CORRIDOR_M` does eventually push some candidates
+  under that cap (1.44–1.50× at 30m, 1.45–1.47× at 40m for two of the three
+  circuits) — but was rejected as an unsafe way to get there: past ~8–10m the
+  same mechanism starts bridging streets that were never the same junction.
+  Caught two ways: Phase 8's own `disconnectedQuad` test fixture (two street
+  sides deliberately pulled 8m apart to model "definitely not connected")
+  started passing once `CORRIDOR_M` reached that gap; and a real-data
+  spot-check against OSM `bridge=yes`/`bridge=viaduct` tags in the bundled
+  bbox found the count of plausible false merges climbing from ~230 at 6m to
+  over 1,000 at 20m. `CORRIDOR_M` ships at the spec's original conservative
+  `6` — real, contained improvement, not a number stretched to hit a
+  headline. `GRADE_SEPARATED_EXCLUSIONS` was populated with 8 real
+  grade-separated locations found this way (the Douro bridges — Infante Dom
+  Henrique, Luiz I both decks — plus the Areosa, Linhas de Torres/Alameda de
+  Cartes, General Sousa Dias/Ribeira-gorge, and Via Engenheiro Edgar Cardoso
+  viaducts, and the Circunvalação's grade separation), `EXCLUDE_RADIUS_M`
+  raised from the spec's 15 to 25 to cover a clustered set of them with one
+  point each. This mitigation is partial, not exhaustive — enumerating every
+  grade-separated point in a hilly city is out of scope for a short hardcoded
+  list, and is noted as such rather than overclaimed.
+  New `graph.test.ts` coverage: a true mid-segment crossing connects (and a
+  regression check that it wouldn't without this pass); a near-miss within
+  `corridorM` connects; one farther apart does not; an excluded crossing
+  stays disconnected despite being within `corridorM`; a `fast-check`
+  property that adding this pass never shrinks the largest component
+  (monotonic, since it only adds edges). `match/loopSearch.test.ts`'s
+  real-data test now loops over all three circuits and logs each one's routed
+  count, deliberately without asserting a specific number — same honesty
+  Phase 8's own real-data test already practised when it also found zero.
+  256 tests pass (`npm run build` and `npm run test:run` both clean).
+  **What this means for next:** the newly-precise blocker is
+  `MAX_LENGTH_RATIO`, a Phase 8 constant this phase deliberately left alone.
+  See *Current priority* above. Full spec:
+  `docs/specs/phase-9-graph-connectivity-repair.md`.
+
+- **2026-09-11 — Phase 9 spec written, following a connectivity
+  investigation.** Prompted by Phase 8's real-data result (0 routed
+  suggestions for all three circuits) and by user feedback that suggestions
+  should be a real connected route, not just overlapping points. Investigated
+  before writing anything: (1) the component-size distribution at the current
+  `NODE_MERGE_M=4` is not a few big disconnected blocks but ~2 427 fragments,
+  mostly small, ~127km of "substantial" (>100m) fragments outside the largest
+  component; (2) sweeping `NODE_MERGE_M` from 1–100m showed the largest
+  component barely moves between 4–10m (87.9–88.6%), only climbing past 90%
+  around 15–20m — ruling out "just raise the tolerance" as a fix, confirmed
+  directly by rerunning Phase 8's `searchRoutedLoops` at `nodeMergeM=20`:
+  **still 0/5 routed for all three circuits**, identical to `4m`; (3)
+  instrumented `tryRouteLoop`-equivalent diagnostics on the top-5 candidates
+  per circuit showed the failures are consistently `shortestPath` returning
+  null for 4–15 of 60 legs — never a snap failure, never the length-ratio
+  cap; (4) spot-checked two of the largest disconnected fragments (Boavista
+  area, Ribeira/Ponte Luiz I hillside) against **live OSM data via Overpass**
+  — both are genuinely connected, dense street networks in the real data,
+  confirming the gap is introduced by this project's own bundling, not a
+  real-world absence of streets; (5) the actual cause: Phase 7's repair only
+  ever merges way **endpoints** (endpoint-endpoint, endpoint-into-interior);
+  it never tests whether two ways **cross** or run close together at an
+  interior point of both, which is exactly what per-way-independent
+  Douglas–Peucker simplification tends to erase at real junctions where
+  neither through-way's shape needs the junction vertex to stay within its
+  own tolerance. Tested a segment-to-segment crossing/corridor check as a
+  replacement mental model for "give streets width" (the user's suggestion):
+  largest component jumped from 88.3% to **96.7%** with pure crossing
+  detection (zero added width), then 97.6% at a 3m corridor, up to 99.3% at
+  15m — confirming the crossing test itself does most of the work, width is
+  a secondary refinement. Decision: Phase 9 adds this as a third repair pass
+  in `graph.ts` (`CORRIDOR_M` starting at 6m, tuned during implementation),
+  plus a short hardcoded exclusion list for known grade-separated crossings
+  (the Douro bridges, any grade-separated Circunvalação point) so the
+  necessarily-2D crossing test doesn't wrongly merge roads that only pass
+  over/under each other — consistent with VISION.md's "no elevation"
+  non-goal, a targeted patch rather than a general fix. No change to
+  `porto-streets.json` or its extraction pipeline. All investigation code was
+  throwaway (run and discarded, not committed). Full spec:
+  `docs/specs/phase-9-graph-connectivity-repair.md`.
 
 - **2026-09-11 — Phase 8 shipped.** Routed loop suggestions. `graph.ts`'s
   `shortestPath` gained `edgeIds: readonly number[]` (additive; `app/trace.ts`'s
