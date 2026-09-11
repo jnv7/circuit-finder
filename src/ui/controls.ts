@@ -4,7 +4,7 @@
 import type { MetricCircuit } from '../circuits'
 import type { SavedPlacement } from '../placements'
 import type { RouteStats } from '../app/trace'
-import type { SearchProgress, Suggestion } from '../match/types'
+import type { LoopSearchProgress, RoutedSuggestion } from '../match/types'
 import { formatDistance, readout } from '../app/overlay'
 import { proximityColor } from '../app/proximity'
 import { MAX_SCALE, MIN_SCALE } from '../app/state'
@@ -38,8 +38,8 @@ export type ControlsView = {
 
 export type SuggestView = {
   phase: 'idle' | 'running' | 'results'
-  progress?: SearchProgress
-  suggestions: readonly Suggestion[]
+  progress?: LoopSearchProgress
+  suggestions: readonly RoutedSuggestion[]
   /** The row currently previewed on the map, if any. */
   selectedIndex: number | null
 }
@@ -84,8 +84,20 @@ export function formatDeviation(stats: RouteStats): string {
   return `~${Math.round(stats.meanDeviationM)} m avg · ${Math.round(stats.maxDeviationM)} m max`
 }
 
-/** "78% on streets · ~24 m avg" — the label for one suggestion row. Pure. */
-export function formatSuggestionLabel(s: Suggestion): string {
+/**
+ * The label for one suggestion row: a routed loop reads as its real length
+ * and deviation from the circuit shape ("simple: false" flagged visibly, not
+ * just ranked lower); a fallback (no real loop found) keeps Phase 6's
+ * coverage-percentage wording, reading clearly as neither of the above. Pure.
+ */
+export function formatSuggestionLabel(s: RoutedSuggestion): string {
+  if (s.loop) {
+    const distance = formatDistance(s.loop.lengthM)
+    const deviation = formatDeviation(s.loop)
+    return s.loop.simple
+      ? `${distance} closed loop · ${deviation} off shape`
+      : `${distance} loop (retraces a street) · ${deviation} off shape`
+  }
   const pct = Math.round(Math.max(0, Math.min(1, s.coverageFraction)) * 100)
   return `${pct}% on streets · ~${Math.round(s.meanDeviationM)} m avg`
 }
@@ -225,9 +237,11 @@ function renderSuggestSection(view: ControlsView): string {
   const { suggest } = view
 
   if (suggest.phase === 'running') {
-    const p = suggest.progress ?? { done: 0, total: 1 }
+    const p = suggest.progress ?? { done: 0, total: 1, phase: 'search' as const }
+    const phaseLabel = p.phase === 'route' ? 'Checking routes…' : 'Searching placements…'
     return `
       <div class="suggest" data-role="suggest-panel">
+        <p class="suggest__phase" data-role="suggest-phase">${phaseLabel}</p>
         <progress data-role="suggest-progress" value="${p.done}" max="${p.total}"></progress>
         <button type="button" data-role="suggest-cancel">Cancel</button>
       </div>

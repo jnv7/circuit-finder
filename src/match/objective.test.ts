@@ -3,7 +3,7 @@ import { resample } from '../geometry/path'
 import type { Point } from '../geometry/types'
 import { buildStreetIndex } from '../streets'
 import type { Street } from '../streets'
-import { MIN_COVERAGE, scoreCandidate } from './objective'
+import { MIN_COVERAGE, sampleIndices, scoreCandidate } from './objective'
 import type { SearchInput } from './types'
 
 // A 400 × 300 rectangle centreline, centroid at the origin.
@@ -78,5 +78,19 @@ describe('scoreCandidate', () => {
     const a = scoreCandidate(input, { anchorM: ANCHOR, rotationRad: 0.2 }, 48)
     const b = scoreCandidate(input, { anchorM: ANCHOR, rotationRad: 0.2 }, 48)
     expect(a).toEqual(b)
+  })
+})
+
+describe('sampleIndices', () => {
+  it('returns every index when k >= n', () => {
+    expect(sampleIndices(4, 4)).toEqual([0, 1, 2, 3])
+    expect(sampleIndices(4, 10)).toEqual([0, 1, 2, 3])
+  })
+
+  it('otherwise returns k evenly spread indices, strictly increasing', () => {
+    const idx = sampleIndices(100, 10)
+    expect(idx).toHaveLength(10)
+    expect(idx).toEqual([0, 10, 20, 30, 40, 50, 60, 70, 80, 90])
+    for (let i = 1; i < idx.length; i++) expect(idx[i]!).toBeGreaterThan(idx[i - 1]!)
   })
 })

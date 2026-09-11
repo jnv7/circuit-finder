@@ -80,6 +80,44 @@ describe('buildStreetGraph', () => {
     expect(direct.lengthM).toBeCloseTo(200, 6)
   })
 
+  it('shortestPath.edgeIds has one id per edge walked, and reveals when two paths share a street', () => {
+    const ways: Street[] = [
+      [[0, 0], [-100, 0]],
+      [[0, 0], [0, 100]],
+      [[0, 0], [100, 0]],
+    ]
+    const graph = buildStreetGraph(ways)
+    const west = graph.nearestNode([-100, 0], 0.001)!
+    const north = graph.nearestNode([0, 100], 0.001)!
+    const east = graph.nearestNode([100, 0], 0.001)!
+
+    const toNorth = graph.shortestPath(west, north)!
+    // Two edges walked (west→origin, origin→north) — one id per edge, not per point.
+    expect(toNorth.edgeIds).toHaveLength(2)
+
+    const toEast = graph.shortestPath(west, east)!
+    // Both paths walk the shared west→origin arm.
+    expect(toNorth.edgeIds.some((id) => toEast.edgeIds.includes(id))).toBe(true)
+  })
+
+  it('two shortestPath calls over disjoint parts of a synthetic grid share no edge id', () => {
+    const ways: Street[] = [
+      [[0, 0], [100, 0]], // bottom
+      [[100, 0], [100, 100]], // right
+      [[100, 100], [0, 100]], // top
+      [[0, 100], [0, 0]], // left
+    ]
+    const graph = buildStreetGraph(ways)
+    const bl = graph.nearestNode([0, 0], 0.001)!
+    const br = graph.nearestNode([100, 0], 0.001)!
+    const tr = graph.nearestNode([100, 100], 0.001)!
+    const tl = graph.nearestNode([0, 100], 0.001)!
+
+    const bottom = graph.shortestPath(bl, br)! // the direct bottom edge
+    const top = graph.shortestPath(tl, tr)! // the direct top edge
+    expect(bottom.edgeIds.some((id) => top.edgeIds.includes(id))).toBe(false)
+  })
+
   it('returns null for two nodes in disconnected components', () => {
     const ways: Street[] = [
       [[0, 0], [10, 0]],

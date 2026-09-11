@@ -52,3 +52,35 @@ export type SearchOptions = Partial<{
   wProcrustes: number
   alignMaxRad: number
 }>
+
+/** Phase 8: a real, fully street-connected closed loop built around a
+ *  candidate's placed outline. See docs/specs/phase-8-routed-loop-suggestions.md. */
+export type RoutedLoop = {
+  /** The closed loop actually run, Porto-frame metres, first point repeated
+   *  at the end. */
+  points: Point[]
+  lengthM: number
+  meanDeviationM: number
+  maxDeviationM: number
+  /** True iff no underlying street edge was walked by more than one leg —
+   *  a real closed loop, not a there-and-back spur that happens to connect
+   *  end to end. */
+  simple: boolean
+}
+
+/** A Phase 6 `Suggestion` with a routed loop attached, when one was found. */
+export type RoutedSuggestion = Suggestion & {
+  /** Present only when a real, fully connected loop was found for this pose. */
+  loop?: RoutedLoop
+}
+
+export type LoopSearchProgress = SearchProgress & { phase: 'search' | 'route' }
+
+export type LoopSearchOptions = SearchOptions &
+  Partial<{
+    loopCandidatePool: number
+    loopResultCount: number
+    loopSamples: number
+    loopSnapMaxM: number
+    maxLengthRatio: number
+  }>

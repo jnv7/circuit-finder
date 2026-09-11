@@ -319,7 +319,7 @@ describe('renderControls — suggest placements section', () => {
       view({
         suggest: {
           phase: 'running',
-          progress: { done: 3, total: 8 },
+          progress: { done: 3, total: 8, phase: 'search' },
           suggestions: [],
           selectedIndex: null,
         },
@@ -328,6 +328,31 @@ describe('renderControls — suggest placements section', () => {
     expect(html).toMatch(/data-role="suggest-progress"[^>]*value="3"[^>]*max="8"/)
     expect(html).toContain('data-role="suggest-cancel"')
     expect(html).not.toContain('data-role="suggest"')
+  })
+
+  it('running: shows a phase label that switches between search and route', () => {
+    const searching = renderControls(
+      view({
+        suggest: {
+          phase: 'running',
+          progress: { done: 1, total: 8, phase: 'search' },
+          suggestions: [],
+          selectedIndex: null,
+        },
+      }),
+    )
+    expect(searching).toContain('Searching placements')
+    const routing = renderControls(
+      view({
+        suggest: {
+          phase: 'running',
+          progress: { done: 1, total: 8, phase: 'route' },
+          suggestions: [],
+          selectedIndex: null,
+        },
+      }),
+    )
+    expect(routing).toContain('Checking routes')
   })
 
   it('results: one row per suggestion with the coverage label, use and clear buttons', () => {
@@ -343,6 +368,25 @@ describe('renderControls — suggest placements section', () => {
     expect(html).toContain('data-role="suggest-clear"')
   })
 
+  it('results: renders the right label for a simple loop, a non-simple loop, and a fallback row', () => {
+    const suggestions = [
+      sampleSuggestion({
+        loop: { points: [], lengthM: 3400, meanDeviationM: 12, maxDeviationM: 30, simple: true },
+      }),
+      sampleSuggestion({
+        loop: { points: [], lengthM: 3400, meanDeviationM: 12, maxDeviationM: 30, simple: false },
+      }),
+      sampleSuggestion(),
+    ]
+    const html = renderControls(
+      view({ suggest: { phase: 'results', suggestions, selectedIndex: null } }),
+    )
+    expect(html).toContain('closed loop')
+    expect(html).toContain('retraces a street')
+    expect(html).toContain('on streets')
+    expect((html.match(/data-role="suggest-use"/g) ?? []).length).toBe(3)
+  })
+
   it('results: shows an empty note when the search found nothing', () => {
     const html = renderControls(
       view({ suggest: { phase: 'results', suggestions: [], selectedIndex: null } }),
@@ -354,7 +398,7 @@ describe('renderControls — suggest placements section', () => {
 })
 
 describe('formatSuggestionLabel', () => {
-  it('shows a rounded percentage and average deviation', () => {
+  it('a fallback suggestion (no loop) shows a rounded percentage and average deviation', () => {
     expect(
       formatSuggestionLabel({
         placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
@@ -363,6 +407,31 @@ describe('formatSuggestionLabel', () => {
         maxDeviationM: 40,
       }),
     ).toBe('73% on streets · ~19 m avg')
+  })
+
+  it('a simple routed loop shows its real length and deviation, no coverage', () => {
+    const label = formatSuggestionLabel({
+      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
+      coverageFraction: 1,
+      meanDeviationM: 5,
+      maxDeviationM: 10,
+      loop: { points: [], lengthM: 3400, meanDeviationM: 12.4, maxDeviationM: 30, simple: true },
+    })
+    expect(label).toContain('closed loop')
+    expect(label).not.toContain('retraces')
+    expect(label).not.toContain('on streets')
+    expect(label).toContain('~12 m avg')
+  })
+
+  it('a non-simple routed loop is visibly flagged as retracing a street', () => {
+    const label = formatSuggestionLabel({
+      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
+      coverageFraction: 1,
+      meanDeviationM: 5,
+      maxDeviationM: 10,
+      loop: { points: [], lengthM: 3400, meanDeviationM: 12.4, maxDeviationM: 30, simple: false },
+    })
+    expect(label).toContain('retraces a street')
   })
 })
 
@@ -380,7 +449,12 @@ describe('bind — suggest section', () => {
     const running = document.createElement('div')
     running.innerHTML = renderControls(
       view({
-        suggest: { phase: 'running', progress: { done: 1, total: 2 }, suggestions: [], selectedIndex: null },
+        suggest: {
+          phase: 'running',
+          progress: { done: 1, total: 2, phase: 'search' },
+          suggestions: [],
+          selectedIndex: null,
+        },
       }),
     )
     const h2 = noopHandlers()

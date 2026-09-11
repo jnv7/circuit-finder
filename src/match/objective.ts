@@ -49,7 +49,7 @@ export type ScoreOptions = {
 const HEADING_SPAN = 2
 
 /** `k` roughly evenly spaced indices into a closed ring of `n` points. */
-function sampleIndices(n: number, k: number): number[] {
+export function sampleIndices(n: number, k: number): number[] {
   if (k >= n) return Array.from({ length: n }, (_, i) => i)
   return Array.from({ length: k }, (_, i) => Math.floor((i * n) / k))
 }

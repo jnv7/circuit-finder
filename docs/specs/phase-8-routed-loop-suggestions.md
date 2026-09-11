@@ -1,6 +1,7 @@
 # Spec — Phase 8: Routed loop suggestions
 
-Status: `todo`
+Status: `done` (shipped 2026-09-11 — see the ROADMAP decision log for the
+real-data routed/fallback figure)
 Depends on: [phase-6-suggested-placements.md](phase-6-suggested-placements.md),
 [phase-7-street-graph.md](phase-7-street-graph.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),

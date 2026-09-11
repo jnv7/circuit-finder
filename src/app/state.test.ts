@@ -111,4 +111,13 @@ describe('reducers', () => {
     expect(traced.route).toHaveLength(2)
     expect(base.placement).not.toEqual(placement)
   })
+
+  it('applyPlacement with a route argument seeds it (copied, not aliased)', () => {
+    const placement = { anchor: [-8.55, 41.18] as const, rotationRad: 0.9, scale: 1.5 }
+    const route = [[-8.55, 41.18], [-8.54, 41.19]] as const
+    const next = applyPlacement(base, placement, route)
+
+    expect(next.route).toEqual(route)
+    expect(next.route).not.toBe(route)
+  })
 })

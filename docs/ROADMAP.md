@@ -6,23 +6,24 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 8 — Routed loop suggestions.** Spec:
-[specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-suggestions.md).
-Not started. Prompted directly by user feedback that Phase 6's suggestions
-still sit over buildings — because they always have: Phase 6 only ever
-measured nearest-street proximity, and Phase 7's routable graph never touched
-the suggestion search (see that spec's own *Not in scope*). This phase closes
-that gap: for each of Phase 6's geometry-ranked candidates, try to build a
-real, fully street-connected closed loop around its placed outline using
-Phase 7's graph; suggestions backed by one are shown with their real loop
-length and deviation from the circuit shape (reusing `app/trace.ts`'s
-`routeStats`, not a coverage %) and, once used, seed an editable traced route
-that actually follows streets the whole way around. A loop that only
-connects by retracing one of its own streets (a there-and-back spur wearing
-a loop's clothes) is flagged `simple: false` and ranks below a genuinely
-non-repeating one — connected alone isn't the same as closed-in-the-useful-
-sense. Falls back to Phase 6's old geometry-only suggestions when no
-candidate can form a full loop.
+**No Phase 9 spec yet.** Phase 8 (routed loop suggestions) shipped
+2026-09-11 — see the decision log below. Its own real-data measurement is a
+strong candidate driver for whatever comes next: at 1:1 scale, **none** of
+the three bundled circuits (`hungaroring`, `silverstone`, `catalunya`) found
+even one routable loop in the bundled Porto street data — every suggestion
+shown today is still a Phase 6 fallback. The cause is street-network
+fragmentation (Phase 7's own 88.3%-largest-component figure), not a bug: a
+circuit-shaped ring is likely to clip at least one of the smaller
+disconnected fragments scattered through the bundled data. Candidates for the
+next spec, roughly in order of how directly they address that finding:
+improving the bundled street data's connectivity (a `porto-streets.json`
+extraction/simplification change, not an app change); relaxing
+`LOOP_SNAP_MAX_M`/adding a small per-leg straight-line tolerance so a routed
+loop can bridge a short gap without failing outright (a deliberate departure
+from this phase's "no silent straight-line patching" decision, so needs its
+own spec); or moving to a different *Later* item entirely (see below) if
+routed loops are judged not worth chasing further on the current data. Needs
+a decision before a spec gets written.
 
 ## Phases
 
@@ -133,7 +134,7 @@ Spec: [specs/phase-7-street-graph.md](specs/phase-7-street-graph.md).
   like the circuit, and Phase 6's suggestions stay geometry-only. That stays a
   later item once this graph has proven itself.
 
-### Phase 8 — Routed loop suggestions — `todo`
+### Phase 8 — Routed loop suggestions — `done`
 
 Spec: [specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-suggestions.md).
 
@@ -181,6 +182,53 @@ Spec: [specs/phase-8-routed-loop-suggestions.md](specs/phase-8-routed-loop-sugge
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-11 — Phase 8 shipped.** Routed loop suggestions. `graph.ts`'s
+  `shortestPath` gained `edgeIds: readonly number[]` (additive; `app/trace.ts`'s
+  `expandRoute` unaffected). New pure `match/loopSearch.ts`: `tryRouteLoop`
+  resamples a candidate's placed outline at `LOOP_SAMPLES=60` even points,
+  requires every one to resolve via `StreetGraph.nearestPointM(_,
+  LOOP_SNAP_MAX_M=30)` and every consecutive pair (closing the loop) to
+  connect via `shortestPath` — any miss fails the whole candidate, no
+  straight-line patching. A successful loop over `MAX_LENGTH_RATIO=1.5`× the
+  circuit's length is still rejected. `simple` is a single pass over a `Set`
+  of edge ids across legs — cheap, no geometry. `searchRoutedLoops` reuses
+  Phase 6's `searchPlacements` unchanged (pool size `LOOP_CANDIDATE_POOL=24`)
+  to find candidate poses, tries routing best-rank-first until
+  `LOOP_RESULT_COUNT=5` routed suggestions are found or the pool runs out,
+  then backfills remaining slots with untried/failed candidates as Phase 6
+  fallback suggestions — final order: simple routed (by `meanDeviationM`) ,
+  then non-simple routed, then fallback in original rank. Loop deviation
+  reuses `app/trace.ts`'s `routeStats` (not Phase 6's turning/Procrustes
+  machinery), per the spec's "plain metres, no score" principle.
+  `app/suggest.ts`'s slice-pump loop was extracted into a shared `pump<P,R>`
+  helper used by both the existing `createSuggester` and the new
+  `createLoopSuggester`; `app/map.ts` now builds only the loop suggester (its
+  fallback-only output already reproduces Phase 6's own shape, so one
+  suggester serves the button), adds an inert dashed `previewRouteLine` layer
+  for hovering a routed suggestion, and `applyPlacement` (now taking an
+  optional `route` param) seeds the traced route from a routed suggestion's
+  loop points on **Use this**. `ui/controls.ts`'s `formatSuggestionLabel`
+  branches three ways (simple loop / non-simple loop / fallback coverage %);
+  the running-progress panel now shows which stage is active ("Searching
+  placements…" / "Checking routes…") from the search's own `phase` field.
+  **Real-data result — the headline finding, not just a tuning note:** at 1:1
+  scale, all three bundled circuits (`hungaroring`, `silverstone`,
+  `catalunya`) returned **0 routed suggestions** — every suggestion shown
+  today is still a Phase 6 fallback (~2.4–2.7 s per search, well within
+  budget). Verified this is a real data characteristic and not a bug in this
+  phase's code: `graph.nearestPointM` resolves every sampled point (0 snap
+  failures in every trace tried); the failures are consistently
+  `shortestPath` returning `null` for a handful of the ~8–60 legs per
+  candidate, i.e. genuine disconnects — consistent with Phase 7's own
+  measurement that only 88.3% of the bundled network's length sits in its
+  largest connected component. Tried scales 0.3/0.5/0.7/1.0, `loopSamples`
+  as low as 8, and `loopCandidatePool` up to 80 — same result throughout, so
+  this is not a tuning-constant problem. All synthetic-network tests (the
+  ones that pin down `tryRouteLoop`/`searchRoutedLoops` behaviour precisely)
+  pass; see *Current priority* above for what this implies for the next
+  phase. 253 tests pass (`npm run build` and `npm run test:run` both clean).
+  Full spec: `docs/specs/phase-8-routed-loop-suggestions.md`.
 
 - **2026-09-11 — Phase 8 spec written.** Routed loop suggestions, prompted
   directly by user feedback that suggestions still sit over buildings.

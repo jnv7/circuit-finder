@@ -32,8 +32,16 @@ export type StreetGraph = {
    * nothing is in range.
    */
   nearestPointM(p: Point, maxM: number): { node: NodeId; point: Point; distanceM: number } | null
-  /** Real shortest path by length, or null if `from`/`to` are disconnected. */
-  shortestPath(from: NodeId, to: NodeId): { lengthM: number; points: Point[] } | null
+  /**
+   * Real shortest path by length, or null if `from`/`to` are disconnected.
+   * `edgeIds` are the internal edge indices walked, in order — opaque outside
+   * this graph instance, stable only within one `buildStreetGraph` call;
+   * useful only for detecting whether two paths reuse the same street edge.
+   */
+  shortestPath(
+    from: NodeId,
+    to: NodeId,
+  ): { lengthM: number; points: Point[]; edgeIds: readonly number[] } | null
 }
 
 type EdgeRecord = { a: NodeId; b: NodeId; points: Point[]; lengthM: number }
@@ -392,8 +400,11 @@ export function buildStreetGraph(
     return { node, point: found.point, distanceM: found.d }
   }
 
-  function shortestPath(from: NodeId, to: NodeId): { lengthM: number; points: Point[] } | null {
-    if (from === to) return { lengthM: 0, points: [nodePositions[from]!] }
+  function shortestPath(
+    from: NodeId,
+    to: NodeId,
+  ): { lengthM: number; points: Point[]; edgeIds: readonly number[] } | null {
+    if (from === to) return { lengthM: 0, points: [nodePositions[from]!], edgeIds: [] }
     const target = nodePositions[to]!
     const gScore = new Map<NodeId, number>([[from, 0]])
     const cameFrom = new Map<NodeId, { via: NodeId; edgeIndex: number; forward: boolean }>()
@@ -443,7 +454,8 @@ export function buildStreetGraph(
       const seq = forward ? pts : [...pts].reverse()
       for (let i = 1; i < seq.length; i++) points.push(seq[i]!)
     }
-    return { lengthM: gScore.get(to)!, points }
+    const edgeIds = edgeChain.map((c) => c.edgeIndex)
+    return { lengthM: gScore.get(to)!, points, edgeIds }
   }
 
   return {

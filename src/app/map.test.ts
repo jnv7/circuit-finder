@@ -7,12 +7,27 @@ import { LEVELS, proximityColor } from './proximity'
 import { createMapApp } from './map'
 
 // Stub the search generator so the suggest tests are fast and deterministic.
+// One routed (Phase 8) suggestion and one fallback (Phase 6-only) suggestion.
+const STUB_LOOP_POINTS: [number, number][] = [
+  [0, 0],
+  [50, 0],
+  [50, 50],
+  [0, 50],
+  [0, 0],
+]
 const STUB_SUGGESTIONS = [
   {
     placement: { anchor: [-8.6, 41.165], rotationRad: 0.4, scale: 1 },
-    coverageFraction: 0.82,
-    meanDeviationM: 21,
-    maxDeviationM: 55,
+    coverageFraction: 1,
+    meanDeviationM: 12,
+    maxDeviationM: 30,
+    loop: {
+      points: STUB_LOOP_POINTS,
+      lengthM: 200,
+      meanDeviationM: 12,
+      maxDeviationM: 30,
+      simple: true,
+    },
   },
   {
     placement: { anchor: [-8.64, 41.15], rotationRad: -0.3, scale: 1 },
@@ -21,10 +36,10 @@ const STUB_SUGGESTIONS = [
     maxDeviationM: 90,
   },
 ]
-vi.mock('../match/search', () => ({
-  searchPlacements: function* () {
-    yield { done: 1, total: 2 }
-    yield { done: 2, total: 2 }
+vi.mock('../match/loopSearch', () => ({
+  searchRoutedLoops: function* () {
+    yield { done: 1, total: 2, phase: 'search' }
+    yield { done: 2, total: 2, phase: 'route' }
     return STUB_SUGGESTIONS
   },
 }))
@@ -286,6 +301,73 @@ describe('createMapApp — saved placements', () => {
     expect(panel(container).textContent).toContain('Saved ')
     expect(panel(container).querySelector('[data-role="preview-saved"]')).toBeNull()
     expect(panel(container).querySelector<HTMLInputElement>('[data-role="scale"]')!.value).toBe('2')
+
+    app.destroy()
+    container.remove()
+  })
+})
+
+describe('createMapApp — routed suggestions (Phase 8)', () => {
+  it('Use this on a routed suggestion moves the overlay and seeds an editable route following the loop', async () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'suggest')
+    await flush()
+    const rows = panel(container).querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')
+    rows[0]!.dispatchEvent(new Event('click')) // the routed suggestion
+
+    expect(routePath(container)).toBeDefined()
+    const d = routePath(container)!.getAttribute('d')!
+    expect((d.match(/[LM]/g) ?? []).length).toBeGreaterThan(2)
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('Use this on a fallback suggestion moves the overlay but leaves the route empty', async () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    const paths = () =>
+      [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('d')).join('|')
+    click(container, 'suggest')
+    await flush()
+    const before = paths()
+    const rows = panel(container).querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')
+    rows[1]!.dispatchEvent(new Event('click')) // the fallback suggestion
+
+    // Leaflet keeps an empty polyline's <path> in the DOM with a placeholder
+    // "d" rather than removing it — an empty route reads as that placeholder.
+    expect(routePath(container)?.getAttribute('d')).toBe('M0 0')
+    expect(paths()).not.toBe(before) // the overlay still moved
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('hovering a routed suggestion previews its real loop, dashed, clearing on un-hover', async () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'suggest')
+    await flush()
+
+    const dashedRoutePaths = () =>
+      [...container.querySelectorAll('svg path')].filter(
+        (p) => p.getAttribute('stroke') === '#1565c0' && p.getAttribute('d') && p.getAttribute('d') !== 'M0 0',
+      )
+
+    const row = panel(container).querySelector('li[data-suggest-index="0"]')!
+    row.dispatchEvent(new Event('mouseenter'))
+    const withPreview = dashedRoutePaths()
+    expect(withPreview.some((p) => p.getAttribute('stroke-dasharray'))).toBe(true)
+
+    panel(container)
+      .querySelector('[data-role="suggest-list"]')!
+      .dispatchEvent(new Event('mouseleave'))
+    const afterLeave = dashedRoutePaths().filter((p) => p.getAttribute('stroke-dasharray'))
+    expect(afterLeave).toHaveLength(0)
 
     app.destroy()
     container.remove()

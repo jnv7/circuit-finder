@@ -90,10 +90,15 @@ export function clearRoute(state: AppState): AppState {
 /**
  * Drop the circuit onto a given placement (a Phase 6 suggestion, or any future
  * "jump to a placement" need): replace `state.placement` with a fresh copy and
- * clear the traced route, which belonged to the old placement. The circuit is
- * unchanged. Pure.
+ * replace the traced route, which belonged to the old placement — empty
+ * unless `route` is given (a Phase 8 routed suggestion seeds one). The circuit
+ * is unchanged. Pure.
  */
-export function applyPlacement(state: AppState, placement: Placement): AppState {
+export function applyPlacement(
+  state: AppState,
+  placement: Placement,
+  route: readonly LonLat[] = [],
+): AppState {
   return {
     ...state,
     placement: {
@@ -101,7 +106,7 @@ export function applyPlacement(state: AppState, placement: Placement): AppState 
       rotationRad: placement.rotationRad,
       scale: placement.scale,
     },
-    route: [],
+    route: route.map((p) => [p[0], p[1]] as LonLat),
   }
 }
 

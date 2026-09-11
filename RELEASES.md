@@ -8,6 +8,40 @@ Newest release first.
 
 ---
 
+## 0.9.0 — Suggestions that check if the loop is actually real (2026-09-11)
+
+**"Suggest placements" now tries to prove each spot is actually runnable, not
+just close to streets.** Until now a suggestion could read "88% on streets"
+while a third of that was the shape merely crossing streets, with no
+guarantee the good bits ever joined into one loop you could run start to
+finish. This release checks: for the best-looking spots, it tries to build a
+real, fully connected loop around the outline using the same street network
+tracing already uses.
+
+**What changes for you:**
+
+- When Porto's streets allow it, a suggestion row now reads something like
+  **"3.4 km closed loop · ~12 m avg off shape"** instead of a coverage
+  percentage — a real length and how far that real loop strays from the
+  circuit's shape, in metres. **Use this** on one of these drops the circuit
+  in place *and* draws the loop as an editable route already following the
+  streets — Undo, Clear, and re-click to extend it, exactly like tracing by
+  hand.
+- A suggestion that only closes by doubling back down the same street reads
+  as **"loop (retraces a street)"** — still usable, but visibly a lesser find,
+  and it always ranks below a loop that never repeats a metre of street.
+- **Hovering** a routed suggestion previews the real loop on the map, dashed,
+  alongside the outline.
+- When no spot in the search can form a full loop — Porto's grid does not
+  always cooperate — the list falls back to the old coverage-percentage
+  suggestions, so it is never emptier than before.
+
+Nothing about the button, the progress bar, or the opt-in/advisory nature of
+suggestions changed — this release just makes the claim behind a suggestion
+more honest.
+
+---
+
 ## 0.8.0 — Tracing follows the actual streets (2026-09-11)
 
 **Your traced route now hugs real streets, not straight lines between clicks.**
