@@ -132,6 +132,9 @@ Spec: [specs/phase-6-suggested-placements.md](specs/phase-6-suggested-placements
   find circuit-like loops (reuses the Phase 6 objective functions).
 - More circuits; auto-select the circuit for the current race weekend.
 - GPX export of the traced route.
+- Cache Phase 6 search results (keyed by circuit + scale, and invalidated if
+  either changes) so **Suggest placements** does not always recompute from
+  scratch — clicking it again for the same circuit/scale would be instant.
 
 ## Decision log
 
@@ -401,6 +404,12 @@ Newest first. Each entry dated.
 - Add Monaco and Madrid once their OSM geometry can be stitched into a clean
   centreline (Monaco needs manual assembly; Madrid needs OSM coverage of the
   IFEMA layout).
+- **2026-09-11 — Phase 6 suggestions look clustered in one part of the bbox.**
+  Not confirmed as a bug — could be a genuine result (one part of Porto's street
+  layout just fits better) or the coarse sweep/dedup under-exploring the rest of
+  the grid. Worth a targeted look (e.g. log/plot the coarse-stage candidate
+  anchors across the bbox before top-`COARSE_KEEP` is applied) next time Phase 6
+  is touched.
 
 Resolved:
 
