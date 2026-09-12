@@ -48,6 +48,17 @@ export type ScoreOptions = {
 /** Local-tangent half-window, in ring indices, for the per-sample heading. */
 const HEADING_SPAN = 2
 
+/** The circuit's own local direction of travel at ring index `i`, placed at
+ *  `rotationRad` — the chord between the points `HEADING_SPAN` indices ahead
+ *  and behind. Factored out of `scoreCandidate` so loop construction
+ *  (Phase 11) can compute the same heading a sample was scored with. */
+export function localHeading(ring: readonly Point[], i: number, rotationRad: number): Point {
+  const n = ring.length
+  const ahead = ring[(i + HEADING_SPAN) % n]!
+  const behind = ring[(i - HEADING_SPAN + n) % n]!
+  return rotateVec([ahead[0] - behind[0], ahead[1] - behind[1]], rotationRad)
+}
+
 /** `k` roughly evenly spaced indices into a closed ring of `n` points. */
 export function sampleIndices(n: number, k: number): number[] {
   if (k >= n) return Array.from({ length: n }, (_, i) => i)
@@ -100,9 +111,7 @@ export function scoreCandidate(
     const p: Point = [r[0] + c.anchorM[0], r[1] + c.anchorM[1]]
     placed[s] = p
 
-    const ahead = ring[(i + HEADING_SPAN) % rn]!
-    const behind = ring[(i - HEADING_SPAN + rn) % rn]!
-    const heading = rotateVec([ahead[0] - behind[0], ahead[1] - behind[1]], c.rotationRad)
+    const heading = localHeading(ring, i, c.rotationRad)
 
     const { distanceM, point } = input.index.nearestAlignedM(p, heading, searchMaxM, alignMaxRad)
     snapped[s] = point ?? p

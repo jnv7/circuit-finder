@@ -6,17 +6,17 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Two specs written, neither implemented yet.** Real use of Phase 10 surfaced
-two separate, independent quality problems with suggestions on Porto's real
-data, prompted by a user-reported concrete case (a 4.67 km circuit whose
+**Phase 11 shipped (direction-aware snapping); Phase 12 (candidate placement
+diversity) is next, still not implemented.** Real use of Phase 10 surfaced two
+separate, independent quality problems with suggestions on Porto's real data,
+prompted by a user-reported concrete case (a 4.67 km circuit whose
 best-effort suggestion came back as a 10.02 km loop with visible "there and
 back" jogs, all clustered in one small part of the city):
 
-- [specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md)
+- ~~[specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md)
   — best-effort loops snap each sample to the nearest street point blind to
   direction, so a sample can jog onto a misaligned side street or driveway
-  and back. Fix: snap only to streets running the same way the circuit does
-  there (direction-aware search, reusing Phase 6's own alignment test).
+  and back.~~ **Done** — see the decision log below for the real-data result.
 - [specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-streets.md)
   — resolves the 2026-09-11 open question below: suggestions cluster in one
   part of the bbox because the coarse grid sweep only ever proposes candidates
@@ -24,13 +24,13 @@ back" jogs, all clustered in one small part of the city):
   candidates from real streets whose own longest straight matches the
   circuit's, plus an explicit diversity pass in final selection.
 
-These are separate levers (loop construction quality vs. candidate placement)
-and can ship in either order or independently. Neither has a locked
-implementation order yet — that's the next decision.
+These were always separate levers (loop construction quality vs. candidate
+placement) that could ship in either order — Phase 11 went first.
 
-Still true from Phase 10: `routedCount` (fully-connected loops) stays 0 for
+Still true after Phase 11: `routedCount` (fully-connected loops) stays 0 for
 all three bundled circuits — `MAX_LENGTH_RATIO` still blocks that path,
-unchanged by either new spec. Full story: the Phase 10 decision-log entry
+unchanged by Phase 11 by design (it only changes which point a sample resolves
+to, not the length cap). Full story: the Phase 10/11 decision-log entries
 below and
 [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
 
@@ -203,6 +203,41 @@ Spec: [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-ro
   `routedCount` stays 0 for all three, unchanged from Phase 9 — see the
   decision log for what that implies for Phase 11.
 
+### Phase 11 — Straighten best-effort loops (direction-aware snapping) — `done`
+
+Spec: [specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md).
+
+- `StreetGraph` gained `nearestAlignedPointM`, mirroring `nearestPointM` but
+  filtering candidate street segments by heading alignment first — the same
+  "modulo π, compare `|cos|`" test `StreetIndex.nearestAlignedM` (Phase 6's
+  own candidate scoring) already used, now reused for loop *construction* too.
+- `tryRouteLoop`/`buildBestEffortLoop` snap each sample through it instead of
+  plain nearest-distance, using the circuit's own local heading there
+  (`objective.ts`'s `localHeading`, factored out of `scoreCandidate` so both
+  call sites compute the same thing one way).
+- A sample with no *aligned* street within `LOOP_SNAP_MAX_M` is unresolved,
+  full stop — a gap for `buildBestEffortLoop`, a rejection for `tryRouteLoop`
+  — never a silent fall-back to the nearest wrong-direction point.
+- No change to `MAX_LENGTH_RATIO`, `LOOP_SAMPLES`, `LOOP_SNAP_MAX_M`,
+  `CORRIDOR_M`, or manual **Trace route** (direction-blind snapping there is
+  unaffected — this only touches suggestion construction).
+- **Real-data result:** the real-data test (`loopSearch.test.ts`) now also
+  logs each best-effort suggestion's `lengthM` as a multiple of the circuit's
+  own length — Phase 10 only logged gap counts/lengths, so this is the first
+  direct measurement of the thing this phase actually targets. Across all 5
+  best-effort suggestions per bundled circuit: hungaroring 1.90×, 2.22×,
+  2.76×, 1.89×, 1.91×; silverstone 1.87×, 1.50×, 1.57×, 1.43×, 1.22×;
+  catalunya 1.89×, 1.97×, 2.04×, 1.84×, 1.95× — every circuit's best row now
+  under 1.9×, down from the 2.1–3.6× range this spec's Goal section reported
+  for Phase 10 (including the original 4.67 km → 10.02 km, ~2.15×, case that
+  prompted this phase). `gapCount`/`gapLengthM` rose on every circuit (e.g.
+  hungaroring's gap counts moved from 8–19 to 10–22) — the accepted trade this
+  spec called out: a wrong-direction "real" leg that used to silently inflate
+  length now correctly shows as an honest gap instead, so the total route got
+  shorter while the gap tally grew. `routedCount` stays 0 for all three,
+  unchanged by design (`MAX_LENGTH_RATIO` is Phase 12+ territory, not touched
+  here).
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -232,6 +267,39 @@ Spec: [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-ro
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-12 — Phase 11 shipped: best-effort loops snap by direction, not
+  just distance.** `StreetGraph.nearestAlignedPointM` (new) mirrors
+  `nearestPointM` but filters candidate street segments by heading alignment
+  first, the same test `StreetIndex.nearestAlignedM` (Phase 6's own candidate
+  scoring) already used — `objective.ts`'s `scoreCandidate` used it for
+  scoring, but loop *construction* (`tryRouteLoop`/`buildBestEffortLoop`)
+  never had, snapping every sample by plain nearest-distance instead. Both now
+  snap through the aligned search, using each sample's own local heading
+  (`objective.ts`'s new `localHeading`, factored out of `scoreCandidate` so
+  it's computed one way, not duplicated). A sample with no aligned street
+  within `LOOP_SNAP_MAX_M` is unresolved outright — a gap for
+  `buildBestEffortLoop`, a rejection for `tryRouteLoop` — never a silent
+  fall-back to the nearest wrong-direction point, exactly as designed.
+  Implementing this against the existing test suite surfaced one real
+  constraint the spec hadn't spelled out: `localHeading`'s fixed
+  `HEADING_SPAN`-index window degenerates (a zero-length heading, since ahead
+  and behind indices coincide) on a ring with 4 or fewer points — never true
+  for a real resampled circuit, but true of several hand-built 4-point test
+  rings, which needed a couple of extra (unsampled) points added purely to
+  give `localHeading` room to compute a real chord; separately, several
+  pre-Phase-11 tests built around perfect 90° street corners needed an
+  explicit wide `alignMaxRad` override, since the local heading *at* a sharp
+  corner is an inherent ~45° blend of the two streets meeting there, unrelated
+  to what those tests (connectivity, ranking, length rejection) actually
+  exercise. Neither affects real usage: `LOOP_SAMPLES` defaults to 60, and
+  actual F1 corners are curved, not right angles.
+  **Real-data result:** see the Phase 11 entry under Phases above for the
+  full before/after — every bundled circuit's best best-effort suggestion is
+  now under 1.9× its own length, down from the 2.1–3.6× range Phase 10
+  shipped with, at the cost of higher reported gap counts (an accepted,
+  honest trade, not a regression). `routedCount` stays 0 for all three,
+  unaffected by design. 277 tests pass (`npm run build` clean).
 
 - **2026-09-12 — Phase 12 spec written: anchor candidates on real streets,
   add diversity to final selection.** Directly prompted by a user-reported

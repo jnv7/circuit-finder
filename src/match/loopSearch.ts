@@ -9,7 +9,7 @@ import type { Point } from '../geometry/types'
 import { rotate as rotateVec, scale as scaleVec } from '../geometry/vector'
 import type { NodeId, StreetGraph } from '../graph'
 import { portoProjection } from '../porto'
-import { sampleIndices } from './objective'
+import { ALIGN_MAX_RAD, localHeading, sampleIndices } from './objective'
 import { searchPlacements } from './search'
 import type {
   BestEffortLoop,
@@ -54,11 +54,12 @@ export function tryRouteLoop(
   candidate: Candidate,
   scale: number,
   graph: StreetGraph,
-  opts?: { samples?: number; snapMaxM?: number; maxLengthRatio?: number },
+  opts?: { samples?: number; snapMaxM?: number; maxLengthRatio?: number; alignMaxRad?: number },
 ): RoutedLoop | null {
   const samples = opts?.samples ?? LOOP_SAMPLES
   const snapMaxM = opts?.snapMaxM ?? LOOP_SNAP_MAX_M
   const maxLengthRatio = opts?.maxLengthRatio ?? MAX_LENGTH_RATIO
+  const alignMaxRad = opts?.alignMaxRad ?? ALIGN_MAX_RAD
 
   const ring = circuitSamplesM
   const idx = sampleIndices(ring.length, samples)
@@ -66,8 +67,10 @@ export function tryRouteLoop(
 
   const nodes: NodeId[] = new Array(n)
   for (let s = 0; s < n; s++) {
-    const p = placePoint(ring[idx[s]!]!, candidate, scale)
-    const resolved = graph.nearestPointM(p, snapMaxM)
+    const i = idx[s]!
+    const p = placePoint(ring[i]!, candidate, scale)
+    const heading = localHeading(ring, i, candidate.rotationRad)
+    const resolved = graph.nearestAlignedPointM(p, heading, snapMaxM, alignMaxRad)
     if (!resolved) return null
     nodes[s] = resolved.node
   }
@@ -121,10 +124,11 @@ export function buildBestEffortLoop(
   candidate: Candidate,
   scale: number,
   graph: StreetGraph,
-  opts?: { samples?: number; snapMaxM?: number },
+  opts?: { samples?: number; snapMaxM?: number; alignMaxRad?: number },
 ): BestEffortLoop {
   const samples = opts?.samples ?? LOOP_SAMPLES
   const snapMaxM = opts?.snapMaxM ?? LOOP_SNAP_MAX_M
+  const alignMaxRad = opts?.alignMaxRad ?? ALIGN_MAX_RAD
 
   const ring = circuitSamplesM
   const idx = sampleIndices(ring.length, samples)
@@ -133,8 +137,10 @@ export function buildBestEffortLoop(
   const waypoints: Point[] = new Array(n)
   const nodes: Array<NodeId | null> = new Array(n)
   for (let s = 0; s < n; s++) {
-    const p = placePoint(ring[idx[s]!]!, candidate, scale)
-    const resolved = graph.nearestPointM(p, snapMaxM)
+    const i = idx[s]!
+    const p = placePoint(ring[i]!, candidate, scale)
+    const heading = localHeading(ring, i, candidate.rotationRad)
+    const resolved = graph.nearestAlignedPointM(p, heading, snapMaxM, alignMaxRad)
     waypoints[s] = resolved ? resolved.point : p
     nodes[s] = resolved ? resolved.node : null
   }
@@ -203,6 +209,7 @@ export function* searchRoutedLoops(
   const loopSamples = opts.loopSamples ?? LOOP_SAMPLES
   const loopSnapMaxM = opts.loopSnapMaxM ?? LOOP_SNAP_MAX_M
   const maxLengthRatio = opts.maxLengthRatio ?? MAX_LENGTH_RATIO
+  const alignMaxRad = opts.alignMaxRad ?? ALIGN_MAX_RAD
 
   const searchGen = searchPlacements(input, { ...opts, resultCount: loopCandidatePool })
   let step = searchGen.next()
@@ -229,6 +236,7 @@ export function* searchRoutedLoops(
         samples: loopSamples,
         snapMaxM: loopSnapMaxM,
         maxLengthRatio,
+        alignMaxRad,
       })
       if (loop) {
         routed.push({ ...s, loop })
@@ -236,6 +244,7 @@ export function* searchRoutedLoops(
         const be = buildBestEffortLoop(input.circuitSamplesM, candidate, input.scale, graph, {
           samples: loopSamples,
           snapMaxM: loopSnapMaxM,
+          alignMaxRad,
         })
         bestEffort.push({ ...s, bestEffort: be })
       }

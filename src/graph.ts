@@ -87,6 +87,20 @@ export type StreetGraph = {
    */
   nearestPointM(p: Point, maxM: number): { node: NodeId; point: Point; distanceM: number } | null
   /**
+   * Like `nearestPointM`, but only edge segments whose local direction is
+   * within `maxAngleRad` of `heading` (mod π — direction of travel doesn't
+   * matter) are considered. "Is there a street here I could run *along*?",
+   * not merely "is a street nearby?". Mirrors `StreetIndex.nearestAlignedM`,
+   * except `heading` must be non-zero — both callers (Phase 11's loop
+   * construction) always have a real local heading to give it.
+   */
+  nearestAlignedPointM(
+    p: Point,
+    heading: Point,
+    maxM: number,
+    maxAngleRad: number,
+  ): { node: NodeId; point: Point; distanceM: number } | null
+  /**
    * Real shortest path by length, or null if `from`/`to` are disconnected.
    * `edgeIds` are the internal edge indices walked, in order — opaque outside
    * this graph instance, stable only within one `buildStreetGraph` call;
@@ -600,12 +614,24 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
     )
   }
 
+  type EdgePointCandidate = { point: Point; edgeIndex: number; segIdx: number; t: number; d: number }
+
+  /** Resolve a projected point on an edge to the nearer of its edge's two
+   *  end nodes, shared by `nearestPointM` and `nearestAlignedPointM`. */
+  function resolveEdgePoint(found: EdgePointCandidate): { node: NodeId; point: Point; distanceM: number } {
+    const edge = edges[found.edgeIndex]!
+    const cum = edgeCumLength[found.edgeIndex]!
+    const segLen = distance(edge.points[found.segIdx - 1]!, edge.points[found.segIdx]!)
+    const arcToFoot = cum[found.segIdx - 1]! + found.t * segLen
+    const node = arcToFoot <= edge.lengthM - arcToFoot ? edge.a : edge.b
+    return { node, point: found.point, distanceM: found.d }
+  }
+
   function nearestPointM(p: Point, maxM: number): { node: NodeId; point: Point; distanceM: number } | null {
     if (distanceToNetworkBounds(p) > maxM) return null
-    type Candidate = { point: Point; edgeIndex: number; segIdx: number; t: number; d: number }
-    const found = expandingSearch<Candidate>(
+    const found = expandingSearch<EdgePointCandidate>(
       (q, r) => {
-        const out: Candidate[] = []
+        const out: EdgePointCandidate[] = []
         for (const idx of edgeSegGrid.near(q, r)) {
           const s = edgeSegments[idx]!
           const { point, t } = projectOntoSegment(p, s.a, s.b)
@@ -617,13 +643,42 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
       p,
       maxM,
     )
-    if (!found) return null
-    const edge = edges[found.edgeIndex]!
-    const cum = edgeCumLength[found.edgeIndex]!
-    const segLen = distance(edge.points[found.segIdx - 1]!, edge.points[found.segIdx]!)
-    const arcToFoot = cum[found.segIdx - 1]! + found.t * segLen
-    const node = arcToFoot <= edge.lengthM - arcToFoot ? edge.a : edge.b
-    return { node, point: found.point, distanceM: found.d }
+    return found ? resolveEdgePoint(found) : null
+  }
+
+  function nearestAlignedPointM(
+    p: Point,
+    heading: Point,
+    maxM: number,
+    maxAngleRad: number,
+  ): { node: NodeId; point: Point; distanceM: number } | null {
+    const hlen = Math.hypot(heading[0], heading[1])
+    if (hlen === 0) throw new Error('nearestAlignedPointM: heading must be non-zero')
+    const hx = heading[0] / hlen
+    const hy = heading[1] / hlen
+    const minAbsCos = Math.cos(maxAngleRad)
+
+    if (distanceToNetworkBounds(p) > maxM) return null
+    const found = expandingSearch<EdgePointCandidate>(
+      (q, r) => {
+        const out: EdgePointCandidate[] = []
+        for (const idx of edgeSegGrid.near(q, r)) {
+          const s = edgeSegments[idx]!
+          const sx = s.b[0] - s.a[0]
+          const sy = s.b[1] - s.a[1]
+          const slen = Math.hypot(sx, sy)
+          if (slen === 0) continue
+          if (Math.abs((sx * hx + sy * hy) / slen) < minAbsCos) continue
+          const { point, t } = projectOntoSegment(p, s.a, s.b)
+          out.push({ point, edgeIndex: s.edgeIndex, segIdx: s.segIdx, t, d: distance(p, point) })
+        }
+        return out
+      },
+      (c) => c.d,
+      p,
+      maxM,
+    )
+    return found ? resolveEdgePoint(found) : null
   }
 
   function shortestPath(
@@ -689,6 +744,7 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
     nodePosition: (id) => nodePositions[id]!,
     nearestNode,
     nearestPointM,
+    nearestAlignedPointM,
     shortestPath,
   }
 }

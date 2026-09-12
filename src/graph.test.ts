@@ -155,6 +155,41 @@ describe('buildStreetGraph', () => {
   })
 })
 
+describe('buildStreetGraph — nearestAlignedPointM (Phase 11)', () => {
+  // A long through-street along y=0, plus a short perpendicular side street
+  // stubbing off it at x=50 — physically closer to a point just off the
+  // junction, but running the wrong way.
+  const through: Street = [[0, 0], [100, 0]]
+  const side: Street = [[50, 0], [50, -20]]
+
+  // 2 m from the side street, 5 m from the through-street: physically closer
+  // to the (perpendicular, misaligned) side street.
+  const p: Point = [52, -5]
+
+  it('resolves onto the through-street when given a heading aligned with it, not the closer perpendicular stub', () => {
+    const graph = buildStreetGraph([through, side])
+    const result = graph.nearestAlignedPointM(p, [1, 0], 10, (10 * Math.PI) / 180)
+    expect(result).not.toBeNull()
+    expect(result!.point[1]).toBeCloseTo(0, 6) // snapped onto y=0, the through-street
+    expect(result!.point[0]).toBeCloseTo(52, 6)
+  })
+
+  it('returns null when nothing aligned is within range, even though the misaligned side street is physically closer', () => {
+    const graph = buildStreetGraph([through, side])
+    // maxM=3: the side street (2 m away) is in range but misaligned with the
+    // horizontal heading; the through-street (5 m away, aligned) is out of
+    // range. Neither resolves, so the physically-closer misaligned street
+    // must never be returned as a fallback.
+    const result = graph.nearestAlignedPointM(p, [1, 0], 3, (10 * Math.PI) / 180)
+    expect(result).toBeNull()
+  })
+
+  it('throws for a zero-length heading, unlike StreetIndex.nearestAlignedM which falls back to plain-nearest', () => {
+    const graph = buildStreetGraph([through, side])
+    expect(() => graph.nearestAlignedPointM(p, [0, 0], 10, (10 * Math.PI) / 180)).toThrow()
+  })
+})
+
 describe('buildStreetGraph — crossing/corridor repair (Phase 9)', () => {
   it('connects two ways that cross mid-segment with no shared vertex — which Phase 7 alone misses', () => {
     const ways: Street[] = [

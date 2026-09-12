@@ -8,6 +8,28 @@ Newest release first.
 
 ---
 
+## 0.10.1 — Best-effort suggestions stop zig-zagging onto the wrong street (2026-09-12)
+
+**Best-effort suggestions are noticeably straighter and shorter.** Looking
+closely at real suggestions turned up short "there and back" jogs: a stretch
+would jump onto a nearby side street or driveway running the wrong way, then
+have to backtrack to continue — technically real street, but not a sane
+running route. Each point along a suggestion now only snaps to a street
+running roughly *the way the circuit does there*, not just whichever street
+happens to be closest.
+
+**What changes for you:** best-effort suggestion rows are shorter and hug the
+circuit's shape more cleanly — on the three bundled circuits, the closest
+suggestion now runs under 1.9× the circuit's own length, down from as much as
+3.6× before. You may see a few more red gaps than before on some rows: a
+stretch that used to silently borrow the wrong street now honestly shows as a
+gap instead, which is the more truthful picture, not a step backwards.
+
+Nothing else changes — same suggestion list, same **Use this**/hover
+behaviour, same manual **Trace route**.
+
+---
+
 ## 0.10.0 — Suggestions and traced routes now show exactly where the street runs out (2026-09-12)
 
 **"Suggest placements" finally shows real routed loops for Porto — by being

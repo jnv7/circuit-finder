@@ -32,8 +32,25 @@ const triangle: Street[] = [
   [B, C],
   [C, A],
 ]
-const ring: Point[] = [A, B, C, D]
+const mid = (p: Point, q: Point): Point => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]
+// A, B, C, D plus their midpoints — `sampleIndices(ring.length, 4)` below
+// still lands exactly on A/B/C/D (unchanged sample points/assertions), but
+// the extra points keep `localHeading`'s `HEADING_SPAN`-index window from
+// wrapping onto itself the way it would on a bare 4-point ring (behind and
+// ahead indices coinciding, a zero-length heading `nearestAlignedPointM`
+// rejects) — a degenerate case only a hand-built 4-point test ring like this
+// one hits; a real resampled circuit never does.
+const ring: Point[] = [A, mid(A, B), B, mid(B, C), C, mid(C, D), D, mid(D, A)]
 const identity: Candidate = { anchorM: [0, 0], rotationRad: 0 }
+// A/B/C/D sit at right angles, so the local heading `localHeading` computes
+// exactly at one of them is an inherent ~45° diagonal blend of the two
+// square sides meeting there — a corner-geometry artifact these tests
+// (written for Phase 8/10, before alignment existed) don't care about, since
+// they exercise connectivity/ranking/length, not which street a sample
+// resolves to. Passing this disables Phase 11's alignment filter for them,
+// same as if every street were "aligned" — the pre-Phase-11 behaviour they
+// were written against.
+const NO_ALIGN_FILTER = Math.PI / 2
 
 describe('tryRouteLoop', () => {
   it('a clean rectangular street loop matching the placed outline closely returns a simple, low-deviation loop', () => {
@@ -65,6 +82,7 @@ describe('tryRouteLoop', () => {
 
     const result = tryRouteLoop(circuitSamplesM, { anchorM: anchor, rotationRad: 0 }, 1, graph, {
       samples: 48,
+      alignMaxRad: NO_ALIGN_FILTER,
     })
 
     expect(result).not.toBeNull()
@@ -77,7 +95,7 @@ describe('tryRouteLoop', () => {
   it('a candidate with a sample over open space (no street within snapMaxM) returns null', () => {
     // No street anywhere near D.
     const graph = buildStreetGraph(triangle)
-    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4 })).toBeNull()
+    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })).toBeNull()
   })
 
   it('a candidate whose ring crosses a gap between two disconnected components returns null', () => {
@@ -87,7 +105,7 @@ describe('tryRouteLoop', () => {
       [50, 100],
     ]
     const graph = buildStreetGraph([...triangle, isolatedNearD])
-    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4 })).toBeNull()
+    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })).toBeNull()
   })
 
   it('a legitimately-connected but far-detouring loop is rejected on length, not shape', () => {
@@ -99,7 +117,7 @@ describe('tryRouteLoop', () => {
       [0, 100],
     ]
     const graph = buildStreetGraph([...triangle, longSpur])
-    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4 })).toBeNull()
+    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })).toBeNull()
   })
 
   it('a single-access side street forcing a there-and-back is accepted but flagged non-simple', () => {
@@ -109,11 +127,79 @@ describe('tryRouteLoop', () => {
       [0, 100],
     ]
     const graph = buildStreetGraph([...triangle, shortSpur])
-    const result = tryRouteLoop(ring, identity, 1, graph, { samples: 4 })
+    const result = tryRouteLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })
     expect(result).not.toBeNull()
     expect(result!.simple).toBe(false)
     // Longer than the ring's own ~400 m perimeter — the spur is walked twice.
     expect(result!.lengthM).toBeGreaterThan(400)
+  })
+})
+
+// --- Phase 11: direction-aware snapping. A rectangular through-street loop,
+// plus a long stub hanging off the *top* side's midpoint down to just short
+// of the bottom side — a real, connected street, but reaching it from
+// anywhere on the loop means a long detour up and back down. The circuit's
+// own outline is perturbed inward right next to the stub's dangling tip, so
+// a plain nearest-point snap picks the stub (closer in raw distance) over
+// the horizontal bottom street (farther, but the way the circuit actually
+// runs there) — exactly the wrong-direction jog this phase removes. ---
+const q0: Point = [0, 0]
+const q1: Point = [100, 0]
+const q2: Point = [100, 100]
+const q3: Point = [0, 100]
+const loopBottom: Street = [q0, q1]
+const loopRight: Street = [q1, q2]
+const loopTop: Street = [q2, q3]
+const loopLeft: Street = [q3, q0]
+// Attached at the top side's midpoint, dangling down to 5 m short of the
+// bottom side — physically close to a point just above the bottom side, but
+// only reachable via the top.
+const danglingStub: Street = [
+  [50, 100],
+  [50, 5],
+]
+// The bottom side's own midpoint pulled 3 m inward (toward the stub's tip,
+// 2 m away) — closer to the stub than to the bottom street it actually sits
+// beside.
+const perturbedRing: Point[] = [q0, [50, 3], q1, q2, q3]
+const perturbedIdentity: Candidate = { anchorM: [0, 0], rotationRad: 0 }
+
+describe('tryRouteLoop / buildBestEffortLoop — direction-aware snapping (Phase 11)', () => {
+  it('tryRouteLoop resolves the perturbed sample onto the bottom street, ignoring the physically-closer but misaligned dangling stub', () => {
+    const withStub = buildStreetGraph([loopBottom, loopRight, loopTop, loopLeft, danglingStub])
+    const withoutStub = buildStreetGraph([loopBottom, loopRight, loopTop, loopLeft])
+
+    const result = tryRouteLoop(perturbedRing, perturbedIdentity, 1, withStub, { samples: 5 })
+    const baseline = tryRouteLoop(perturbedRing, perturbedIdentity, 1, withoutStub, { samples: 5 })
+
+    expect(result).not.toBeNull()
+    expect(baseline).not.toBeNull()
+    // No detour up to the stub and back: same length as the stub-free
+    // network, not the ~250 m round trip a plain nearest-point snap would add.
+    expect(result!.lengthM).toBeCloseTo(baseline!.lengthM, 6)
+    expect(result!.simple).toBe(true)
+  })
+
+  it('buildBestEffortLoop resolves the same sample onto the bottom street too, with no gaps and no inflated length', () => {
+    const withStub = buildStreetGraph([loopBottom, loopRight, loopTop, loopLeft, danglingStub])
+    const withoutStub = buildStreetGraph([loopBottom, loopRight, loopTop, loopLeft])
+
+    const result = buildBestEffortLoop(perturbedRing, perturbedIdentity, 1, withStub, { samples: 5 })
+    const baseline = buildBestEffortLoop(perturbedRing, perturbedIdentity, 1, withoutStub, { samples: 5 })
+
+    expect(result.gapCount).toBe(0)
+    expect(result.lengthM).toBeCloseTo(baseline.lengthM, 6)
+  })
+
+  it('a sample is treated as unresolved when only a misaligned street is within snapMaxM, not silently snapped to it', () => {
+    // Only the dangling stub is nearby (no bottom street at all) — the
+    // sample has a misaligned street in range and nothing aligned.
+    const graph = buildStreetGraph([danglingStub])
+    const p: Point = [50, 3] // 2 m from the stub's tip, well within snapMaxM
+    const heading: Point = [1, 0] // the circuit's own (horizontal) direction here
+
+    expect(graph.nearestAlignedPointM(p, heading, 30, (10 * Math.PI) / 180)).toBeNull()
+    expect(graph.nearestPointM(p, 30)).not.toBeNull() // the stub is there, just misaligned
   })
 })
 
@@ -147,6 +233,7 @@ describe('buildBestEffortLoop', () => {
 
     const result = buildBestEffortLoop(circuitSamplesM, { anchorM: anchor, rotationRad: 0 }, 1, graph, {
       samples: 48,
+      alignMaxRad: NO_ALIGN_FILTER,
     })
 
     expect(result.gapCount).toBe(0)
@@ -166,7 +253,7 @@ describe('buildBestEffortLoop', () => {
     ]
     const graph = buildStreetGraph([...triangle, isolatedNearD])
 
-    const result = buildBestEffortLoop(ring, identity, 1, graph, { samples: 4 })
+    const result = buildBestEffortLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })
 
     expect(result.legs).toHaveLength(4)
     expect(result.legs[0]!.real).toBe(true) // A-B
@@ -184,7 +271,7 @@ describe('buildBestEffortLoop', () => {
     const graph = buildStreetGraph(triangle)
     const farAway: Candidate = { anchorM: [1_000_000, 1_000_000], rotationRad: 0 }
 
-    const result = buildBestEffortLoop(ring, farAway, 1, graph, { samples: 4 })
+    const result = buildBestEffortLoop(ring, farAway, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })
 
     expect(result.legs).toHaveLength(4)
     expect(result.legs.every((l) => !l.real)).toBe(true)
@@ -201,9 +288,9 @@ describe('buildBestEffortLoop', () => {
       [0, 100],
     ]
     const graph = buildStreetGraph([...triangle, longSpur])
-    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4 })).toBeNull()
+    expect(tryRouteLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })).toBeNull()
 
-    const result = buildBestEffortLoop(ring, identity, 1, graph, { samples: 4 })
+    const result = buildBestEffortLoop(ring, identity, 1, graph, { samples: 4, alignMaxRad: NO_ALIGN_FILTER })
     expect(result.legs.every((l) => l.real)).toBe(true)
     expect(result.gapCount).toBe(0)
     expect(result.lengthM).toBeGreaterThan(1000) // far over the ring's own ~400 m perimeter
@@ -308,7 +395,7 @@ describe('searchRoutedLoops', () => {
     const graph = buildStreetGraph(ways)
     const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
 
-    const { suggestions } = drain(searchRoutedLoops(input, graph))
+    const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
     expect(suggestions.length).toBeGreaterThanOrEqual(2)
     expect(suggestions[0]!.loop).toBeDefined()
@@ -323,7 +410,7 @@ describe('searchRoutedLoops', () => {
     const graph = buildStreetGraph(ways)
     const input: SearchInput = { circuitSamplesM: nonSimpleRing, scale: 1, index, bbox: BBOX }
 
-    const { suggestions } = drain(searchRoutedLoops(input, graph))
+    const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
     expect(suggestions[0]!.loop).toBeDefined()
     expect(suggestions[0]!.loop!.simple).toBe(false)
@@ -336,7 +423,7 @@ describe('searchRoutedLoops', () => {
     const graph = buildStreetGraph(ways)
     const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
 
-    const { suggestions } = drain(searchRoutedLoops(input, graph))
+    const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
     expect(suggestions.length).toBeGreaterThanOrEqual(1)
     expect(suggestions.every((s) => !s.loop)).toBe(true)
@@ -350,7 +437,7 @@ describe('searchRoutedLoops', () => {
     const graph = buildStreetGraph(ways)
     const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
 
-    const { suggestions } = drain(searchRoutedLoops(input, graph))
+    const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
     expect(suggestions[0]!.loop).toBeDefined()
     const decoyIndex = suggestions.findIndex((s) => s.bestEffort !== undefined)
@@ -370,7 +457,7 @@ describe('searchRoutedLoops', () => {
       bbox: BBOX,
     }
 
-    const { suggestions } = drain(searchRoutedLoops(input, graph, { loopCandidatePool: 24 }))
+    const { suggestions } = drain(searchRoutedLoops(input, graph, { loopCandidatePool: 24, alignMaxRad: NO_ALIGN_FILTER }))
 
     const bestEffortOnes = suggestions.filter((s) => s.bestEffort !== undefined)
     expect(bestEffortOnes.length).toBeGreaterThanOrEqual(2)
@@ -387,7 +474,7 @@ describe('searchRoutedLoops', () => {
     const graph = buildStreetGraph(ways)
     const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
 
-    const { progress } = drain(searchRoutedLoops(input, graph))
+    const { progress } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
     expect(progress.length).toBeGreaterThan(0)
     const search = progress.filter((p) => p.phase === 'search')
@@ -434,6 +521,14 @@ describe('searchRoutedLoops — real Porto data', () => {
         const bestEffortOnes = suggestions.filter((s) => s.bestEffort)
         const gapCounts = bestEffortOnes.map((s) => s.bestEffort!.gapCount)
         const gapLengths = bestEffortOnes.map((s) => Math.round(s.bestEffort!.gapLengthM))
+        // lengthM/its ratio to the circuit's own length: Phase 11's actual
+        // target (see docs/specs/phase-11-straighten-best-effort-loops.md) —
+        // gapCount/gapLengthM alone can rise even as this improves, since a
+        // wrong-direction "real" leg becoming an honest gap shortens the
+        // total route while adding to the gap tally.
+        const targetLengthM = pathLength(circuit.metricCentreline, true)
+        const lengths = bestEffortOnes.map((s) => Math.round(s.bestEffort!.lengthM))
+        const ratios = bestEffortOnes.map((s) => (s.bestEffort!.lengthM / targetLengthM).toFixed(2))
         // Reported in the ROADMAP decision-log entry. Phase 9's crossing/
         // corridor repair raised real connectivity from 88.3% to ~95%, but as
         // of Phase 9 every bundled circuit still routed 0 — the surviving
@@ -445,9 +540,11 @@ describe('searchRoutedLoops — real Porto data', () => {
         // since it never fails.
         console.log(
           `searchRoutedLoops (real data) — ${circuit.id}: ${elapsedMs.toFixed(0)} ms, ` +
+            `circuit length ${targetLengthM.toFixed(0)} m, ` +
             `${routedCount}/${suggestions.length} routed (${simpleCount} simple), ` +
             `${bestEffortOnes.length} best-effort (gaps: ${gapCounts.join(',')}; ` +
-            `gap lengths m: ${gapLengths.join(',')})`,
+            `gap lengths m: ${gapLengths.join(',')}; ` +
+            `lengths m: ${lengths.join(',')}; ratio to circuit: ${ratios.join(',')})`,
         )
 
         expect(suggestions.length).toBeGreaterThanOrEqual(1)

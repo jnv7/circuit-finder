@@ -1,6 +1,6 @@
 # Spec — Phase 11: Straighten best-effort loops (direction-aware snapping)
 
-Status: `todo`
+Status: `done`
 Depends on: [phase-8-routed-loop-suggestions.md](phase-8-routed-loop-suggestions.md),
 [phase-10-best-effort-routed-loops.md](phase-10-best-effort-routed-loops.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),
