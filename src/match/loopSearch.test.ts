@@ -312,6 +312,14 @@ const rectCorners: Point[] = [
   [-200, 150],
 ]
 const circuitSamplesM = resample(rectCorners, 15, true)
+// Phase 12's straight-anchored seeding is orthogonal to what these synthetic
+// tests exercise (connectivity/ranking/length) — an empty `ways` list makes
+// `findMatchingStreetStraights` return no matches, so seeding is a no-op and
+// `circuitStraight`'s value is otherwise unused.
+const NO_STRAIGHT_SEED = {
+  ways: [] as Street[],
+  circuitStraight: { a: rectCorners[0]!, b: rectCorners[1]!, lengthM: 400 },
+}
 
 function placed(p: Point, anchor: Point): Point {
   return [p[0] + anchor[0], p[1] + anchor[1]]
@@ -393,7 +401,7 @@ describe('searchRoutedLoops', () => {
     const ways = [...connectedQuad(REAL_ANCHOR), ...disconnectedQuad(DECOY_ANCHOR)]
     const index = buildStreetIndex(ways, 50)
     const graph = buildStreetGraph(ways)
-    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
+    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX, ...NO_STRAIGHT_SEED }
 
     const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
@@ -408,7 +416,13 @@ describe('searchRoutedLoops', () => {
     const ways = [...nonSimpleQuad(REAL_ANCHOR), ...disconnectedQuad(DECOY_ANCHOR)]
     const index = buildStreetIndex(ways, 50)
     const graph = buildStreetGraph(ways)
-    const input: SearchInput = { circuitSamplesM: nonSimpleRing, scale: 1, index, bbox: BBOX }
+    const input: SearchInput = {
+      circuitSamplesM: nonSimpleRing,
+      scale: 1,
+      index,
+      bbox: BBOX,
+      ...NO_STRAIGHT_SEED,
+    }
 
     const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
@@ -421,7 +435,7 @@ describe('searchRoutedLoops', () => {
     const ways = disconnectedQuad(REAL_ANCHOR)
     const index = buildStreetIndex(ways, 50)
     const graph = buildStreetGraph(ways)
-    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
+    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX, ...NO_STRAIGHT_SEED }
 
     const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
@@ -435,7 +449,7 @@ describe('searchRoutedLoops', () => {
     const ways = [...connectedQuad(REAL_ANCHOR), ...disconnectedQuad(DECOY_ANCHOR)]
     const index = buildStreetIndex(ways, 50)
     const graph = buildStreetGraph(ways)
-    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
+    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX, ...NO_STRAIGHT_SEED }
 
     const { suggestions } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
@@ -455,6 +469,7 @@ describe('searchRoutedLoops', () => {
       scale: 1,
       index,
       bbox: BBOX,
+      ...NO_STRAIGHT_SEED,
     }
 
     const { suggestions } = drain(searchRoutedLoops(input, graph, { loopCandidatePool: 24, alignMaxRad: NO_ALIGN_FILTER }))
@@ -472,7 +487,7 @@ describe('searchRoutedLoops', () => {
     const ways = connectedQuad(REAL_ANCHOR)
     const index = buildStreetIndex(ways, 50)
     const graph = buildStreetGraph(ways)
-    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX }
+    const input: SearchInput = { circuitSamplesM, scale: 1, index, bbox: BBOX, ...NO_STRAIGHT_SEED }
 
     const { progress } = drain(searchRoutedLoops(input, graph, { alignMaxRad: NO_ALIGN_FILTER }))
 
@@ -511,6 +526,12 @@ describe('searchRoutedLoops — real Porto data', () => {
           scale: 1,
           index,
           bbox,
+          ways: network.ways,
+          circuitStraight: {
+            a: circuit.metricCentreline[circuit.longestStraight.startIndex]!,
+            b: circuit.metricCentreline[circuit.longestStraight.endIndex]!,
+            lengthM: circuit.longestStraight.lengthM,
+          },
         }
 
         const started = performance.now()

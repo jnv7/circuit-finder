@@ -1,6 +1,6 @@
 # Spec — Phase 12: Anchor candidates on real streets (longest-straight matching + geographic diversity)
 
-Status: `todo`
+Status: `done`
 Depends on: [phase-6-suggested-placements.md](phase-6-suggested-placements.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),
 [../../CONVENTIONS.md](../../CONVENTIONS.md)

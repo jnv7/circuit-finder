@@ -4,9 +4,11 @@
 // generator that yields progress — `app/suggest.ts` pumps it in time slices so
 // the UI stays responsive. Pure (no DOM, no network). Fixed scale throughout.
 import type { Point } from '../geometry/types'
+import { scale as scaleVec } from '../geometry/vector'
 import { portoProjection } from '../porto'
 import { ALIGN_MAX_RAD, MIN_COVERAGE, scoreCandidate } from './objective'
 import type { CandidateScore } from './objective'
+import { findMatchingStreetStraights, seedFromStraight } from './straights'
 import type { Candidate, SearchInput, SearchOptions, SearchProgress, Suggestion } from './types'
 
 const DEG = Math.PI / 180
@@ -26,6 +28,7 @@ export const DEFAULT_SEARCH_OPTIONS = {
   minCoverage: MIN_COVERAGE,
   dedupDistM: 200,
   dedupRotDeg: 12,
+  diversityDistM: 800,
   alignMaxRad: ALIGN_MAX_RAD,
 } as const
 
@@ -75,8 +78,28 @@ export function* searchPlacements(
   const total = xs.length + o.coarseKeep + 1
   let done = 0
 
-  // --- Coarse sweep --------------------------------------------------------
+  // --- Straight-anchored seeds ---------------------------------------------
+  // Real streets whose own longest straight is close in length to the
+  // circuit's own — the same reasoning a runner scans a map for by eye.
+  // Merged into the same coarse pool as the grid sweep below, so they get
+  // identical refine/dedup/diversity treatment, not a separate code path.
   const coarse: Scored[] = []
+  const scaledCircuitStraight = {
+    a: scaleVec(input.circuitStraight.a, input.scale),
+    b: scaleVec(input.circuitStraight.b, input.scale),
+  }
+  const matchingStraights = findMatchingStreetStraights(
+    input.ways,
+    input.circuitStraight.lengthM * input.scale,
+  )
+  for (const streetStraight of matchingStraights) {
+    for (const candidate of seedFromStraight(scaledCircuitStraight, streetStraight)) {
+      const score = scoreCandidate(input, candidate, o.samplesCoarse, scoreOpts)
+      if (score.coverage >= o.minCoverage) coarse.push({ candidate, score })
+    }
+  }
+
+  // --- Coarse sweep --------------------------------------------------------
   for (const x of xs) {
     for (const y of ys) {
       for (const rotationRad of rots) {
@@ -119,17 +142,43 @@ export function* searchPlacements(
     yield { done, total }
   }
 
-  // --- De-duplicate and take the top few --------------------------------
+  // --- De-duplicate ---------------------------------------------------------
   refined.sort((a, b) => b.score.score - a.score.score)
-  const accepted: Scored[] = []
+  const deduped: Scored[] = []
   for (const r of refined) {
     if (r.score.coverage < o.minCoverage) continue
-    if (accepted.some((a) => isDuplicate(a.candidate, r.candidate, o.dedupDistM, o.dedupRotDeg))) {
+    if (deduped.some((a) => isDuplicate(a.candidate, r.candidate, o.dedupDistM, o.dedupRotDeg))) {
       continue
     }
-    accepted.push(r)
-    if (accepted.length >= o.resultCount) break
+    deduped.push(r)
   }
+
+  // --- Diversity: prefer spreading accepted suggestions across the map ----
+  // Pass one only fills slots with candidates at least `diversityDistM` from
+  // every already-accepted one; pass two fills any slots still empty from the
+  // remaining (already deduped) candidates in plain score order, so a circuit
+  // with only one good spot in Porto still gets `resultCount` suggestions.
+  const accepted: Scored[] = []
+  const remaining: Scored[] = []
+  for (const r of deduped) {
+    const isFarEnough = accepted.every((a) => {
+      const dx = a.candidate.anchorM[0] - r.candidate.anchorM[0]
+      const dy = a.candidate.anchorM[1] - r.candidate.anchorM[1]
+      return Math.hypot(dx, dy) >= o.diversityDistM
+    })
+    if (accepted.length < o.resultCount && isFarEnough) {
+      accepted.push(r)
+    } else {
+      remaining.push(r)
+    }
+  }
+  for (const r of remaining) {
+    if (accepted.length >= o.resultCount) break
+    accepted.push(r)
+  }
+  // Present best-first, same as before this phase — diversity changes which
+  // candidates get in, not the ranking of the ones that do.
+  accepted.sort((a, b) => b.score.score - a.score.score)
 
   const project = portoProjection()
   const suggestions: Suggestion[] = accepted.map((a) => {

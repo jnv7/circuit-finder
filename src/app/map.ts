@@ -508,6 +508,12 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
           scale: state.placement.scale,
           index: streetIndex,
           bbox: searchBBox,
+          ways: network.ways,
+          circuitStraight: {
+            a: circuit.metricCentreline[circuit.longestStraight.startIndex]!,
+            b: circuit.metricCentreline[circuit.longestStraight.endIndex]!,
+            lengthM: circuit.longestStraight.lengthM,
+          },
         }
         loopSuggester.cancel()
         loopSuggester = createLoopSuggester()

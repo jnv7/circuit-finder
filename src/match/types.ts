@@ -3,7 +3,7 @@
 import type { Placement } from '../app/overlay'
 import type { RouteLeg } from '../app/trace'
 import type { Point } from '../geometry/types'
-import type { StreetIndex } from '../streets'
+import type { Street, StreetIndex } from '../streets'
 
 /** A pose for the circuit in the Porto metric frame: where its centroid sits
  *  (metres) and how much it is turned (radians CCW, matching the overlay). */
@@ -29,6 +29,12 @@ export type SearchInput = {
   scale: number
   index: StreetIndex
   bbox: MetricBounds
+  /** Phase 12: raw street ways, for matching real straights against the
+   *  circuit's own longest straight. */
+  ways: readonly Street[]
+  /** Phase 12: the circuit's own longest straight, local frame (centroid at
+   *  the origin, unscaled — same frame as `circuitSamplesM`). */
+  circuitStraight: { a: Point; b: Point; lengthM: number }
 }
 
 export type SearchProgress = { done: number; total: number }
@@ -48,6 +54,9 @@ export type SearchOptions = Partial<{
   minCoverage: number
   dedupDistM: number
   dedupRotDeg: number
+  /** Phase 12: minimum separation (metres) between accepted suggestions
+   *  before falling back to plain score order to fill remaining slots. */
+  diversityDistM: number
   searchMaxM: number
   wTurning: number
   wProcrustes: number

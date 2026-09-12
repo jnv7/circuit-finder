@@ -6,32 +6,31 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 11 shipped (direction-aware snapping); Phase 12 (candidate placement
-diversity) is next, still not implemented.** Real use of Phase 10 surfaced two
-separate, independent quality problems with suggestions on Porto's real data,
-prompted by a user-reported concrete case (a 4.67 km circuit whose
-best-effort suggestion came back as a 10.02 km loop with visible "there and
-back" jogs, all clustered in one small part of the city):
+**Phases 11 and 12 both shipped — the two independent quality problems Phase
+10's real-data result surfaced (loop construction quality and candidate
+placement diversity) are both addressed. No Phase 13 spec is written yet;**
+the next priority should be picked from the *Later — not scheduled* list
+below, informed by further real-world use of Suggest placements now that both
+levers have landed.
 
 - ~~[specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md)
   — best-effort loops snap each sample to the nearest street point blind to
   direction, so a sample can jog onto a misaligned side street or driveway
   and back.~~ **Done** — see the decision log below for the real-data result.
-- [specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-streets.md)
-  — resolves the 2026-09-11 open question below: suggestions cluster in one
-  part of the bbox because the coarse grid sweep only ever proposes candidates
-  from a blind grid, and dedup doesn't encourage spread. Fix: also seed
+- ~~[specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-streets.md)
+  — resolved the 2026-09-11 open question below: suggestions clustered in one
+  part of the bbox because the coarse grid sweep only ever proposed candidates
+  from a blind grid, and dedup didn't encourage spread. Fix shipped: also seed
   candidates from real streets whose own longest straight matches the
-  circuit's, plus an explicit diversity pass in final selection.
+  circuit's, plus an explicit diversity pass in final selection.~~ **Done** —
+  see the decision log below for the real-data result.
 
-These were always separate levers (loop construction quality vs. candidate
-placement) that could ship in either order — Phase 11 went first.
-
-Still true after Phase 11: `routedCount` (fully-connected loops) stays 0 for
-all three bundled circuits — `MAX_LENGTH_RATIO` still blocks that path,
-unchanged by Phase 11 by design (it only changes which point a sample resolves
-to, not the length cap). Full story: the Phase 10/11 decision-log entries
-below and
+Still true after Phase 11 and 12: `routedCount` (fully-connected loops) stays
+0 for all three bundled circuits — `MAX_LENGTH_RATIO` still blocks that path,
+unchanged by either phase by design (neither touches the length cap; Phase 11
+only changes which point a sample resolves to, Phase 12 only changes which
+poses get proposed and how the final list is spread). Full story: the Phase
+10/11/12 decision-log entries below and
 [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
 
 ## Phases
@@ -238,6 +237,34 @@ Spec: [specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten
   unchanged by design (`MAX_LENGTH_RATIO` is Phase 12+ territory, not touched
   here).
 
+### Phase 12 — Anchor candidates on real streets (longest-straight matching + geographic diversity) — `done`
+
+Spec: [specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-streets.md).
+
+- A second way to *propose* a candidate, alongside the existing blind grid
+  sweep: `match/straights.ts`'s `findMatchingStreetStraights` finds every
+  bundled street whose own longest straight run falls within `[0.6, 1.6]`×
+  the circuit's own longest straight length, and `seedFromStraight` places the
+  circuit's straight onto each match (both directions along the street). Seeds
+  merge into the same coarse pool the grid sweep fills, so they get identical
+  refine/dedup treatment — no separate code path.
+- A two-pass accept in final selection: fill slots preferring candidates at
+  least `diversityDistM` (800 m) from every already-accepted one, then fill
+  any remaining slots by plain score — so a circuit with only one good spot in
+  Porto still gets a full result set, never fewer than before this phase.
+- No change to the grid sweep, its constants, or Phase 8/10/11's routing on
+  top of whatever candidates come out.
+- **Real-data result:** on the bundled circuits' final 5 suggestions, the
+  maximum pairwise distance between accepted anchors — the spread metric this
+  phase exists to improve — is now **hungaroring 4687 m, silverstone 5449 m,
+  catalunya 1057 m** (`hungaroring`/`silverstone` picked up real matching
+  streets far across the bbox; `catalunya`, with only 12 matching street
+  straights found — fewer and more localised than the other two circuits'
+  39/46 — spread less, an honest reflection of what real Porto streets offer
+  for that circuit's longest straight, not a bug). Resolves the 2026-09-11
+  clustering open question — see the decision log below for the full
+  before/after context.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -267,6 +294,62 @@ Spec: [specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-12 — Phase 12 shipped: candidates seeded from real streets, final
+  selection spread across the map.** `match/straights.ts` (new):
+  `findMatchingStreetStraights` runs `geometry/straight.ts`'s existing
+  `longestStraight` (`closed: false`) over every bundled street independently
+  and keeps those whose own longest straight lands within
+  `[MIN_STRAIGHT_RATIO 0.6, MAX_STRAIGHT_RATIO 1.6]` of the circuit's own
+  longest straight length (already computed per circuit in Phase 1); for each
+  match, `seedFromStraight` returns two candidates — the street's bearing and
+  its reverse — each placing the circuit's own straight's midpoint onto the
+  street straight's midpoint. `match/search.ts`'s `searchPlacements` scores
+  these seeds with the same `scoreCandidate` the grid sweep uses and merges
+  them into the same `coarse` array before `coarseKeep`/refine, so they get
+  identical downstream treatment, not a special case. `SearchInput` gained
+  `ways` (raw street ways, for straight-matching) and `circuitStraight` (the
+  circuit's own straight, local frame); `app/map.ts`'s `onSuggest` supplies
+  both from data it already had in scope. Final selection's old single accept
+  loop (sort by score, dedup, take `resultCount`) became a **two-pass accept**:
+  pass one fills slots only with candidates at least `diversityDistM` (800 m)
+  from every already-accepted one; pass two fills any slots still empty from
+  the remaining (already deduped) candidates in plain score order, so a
+  circuit with genuinely only one good spot in Porto still gets a full result
+  set. The accepted list is re-sorted by score before being returned, so
+  presentation order is unaffected — diversity changes *which* candidates get
+  in, not how the ones that do are ranked.
+  **Real-data result:** run against all three bundled circuits, straight
+  matching found real candidate streets across the whole bbox, not just near
+  the coarse grid's raw-score peak — **39 matching street straights for
+  hungaroring, 46 for silverstone, 12 for catalunya**. The spread this phase
+  targets — maximum pairwise distance between the final 5 accepted anchors —
+  is now **4687 m (hungaroring), 5449 m (silverstone), 1057 m (catalunya)**:
+  hungaroring and silverstone's suggestions now span most of the bundled
+  bbox; catalunya, with far fewer matching streets found (12 vs. 39/46),
+  spread less — an honest reflection of what real Porto streets actually offer
+  for that circuit's particular straight length, not a shortfall in the
+  diversity logic itself (its two-pass accept still ran; there just weren't
+  many genuinely-separate good spots to spread across). No pre-Phase-12
+  spread number was captured for a direct before/after delta (the metric
+  itself — max pairwise anchor distance — is new, added by this phase's own
+  test), but these numbers are a direct, structural fix for the exact
+  complaint in the 2026-09-11 open question: suggestions no longer come only
+  from wherever the coarse grid's raw coverage score happens to peak.
+  `routedCount` stays 0 for all three, unaffected by design — this phase
+  changes which poses get proposed and how the final list is spread, not the
+  Phase 8 routing validation on top of them. Best-effort loop quality
+  (Phase 11's metric) shifted slightly with the new, more varied candidate
+  pool — best-row length ratios now 1.91×/1.43×/1.84× (hungaroring/
+  silverstone/catalunya) vs. Phase 11's 1.89×/1.22×/1.84× — an expected,
+  accepted trade of trading a narrower search for geographic spread, not a
+  regression in Phase 11's own mechanism. 286 tests pass (`npm run build`
+  clean; two pre-existing 5 s-timeout tests — `graph.test.ts`'s real-data
+  connectivity check and several of `app/map.test.ts`'s — fail only when the
+  full suite runs under heavy parallel load and pass cleanly in isolation, the
+  same known resource-profile characteristic noted in the Phase 10 decision
+  log, not a Phase 12 regression). Full spec:
+  `docs/specs/phase-12-anchor-on-real-streets.md`.
 
 - **2026-09-12 — Phase 11 shipped: best-effort loops snap by direction, not
   just distance.** `StreetGraph.nearestAlignedPointM` (new) mirrors
@@ -921,15 +1004,14 @@ Newest first. Each entry dated.
 - Add Monaco and Madrid once their OSM geometry can be stitched into a clean
   centreline (Monaco needs manual assembly; Madrid needs OSM coverage of the
   IFEMA layout).
-- **2026-09-11 — Phase 6 suggestions look clustered in one part of the bbox.**
-  Confirmed by later real-world use (see the 2026-09-12 Phase 12 spec entry
-  above): the coarse sweep/dedup was indeed under-exploring the rest of the
-  grid. Spec written: `docs/specs/phase-12-anchor-on-real-streets.md` (real
-  street straight matching + a diversity pass in final selection) — move to
-  Resolved once shipped and confirmed on real data.
 
 Resolved:
 
+- ~~Phase 6 suggestions look clustered in one part of the bbox~~ →
+  confirmed by real-world use, fixed by Phase 12's straight-anchored seeding
+  and diversity pass: final-suggestion spread (max pairwise anchor distance)
+  is now 4687 m (hungaroring), 5449 m (silverstone), 1057 m (catalunya) — see
+  the Phase 12 decision-log entry (2026-09-12).
 - ~~Circuit geometry source: OSM raceway ways vs. a public F1 GeoJSON dataset~~ →
   OpenStreetMap raceway ways, normalised copy in the repo (2026-09-09).
 - ~~Which circuits to bundle first~~ → `hungaroring`, `silverstone`, `catalunya`

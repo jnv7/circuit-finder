@@ -8,6 +8,28 @@ Newest release first.
 
 ---
 
+## 0.11.0 — Suggestions spread across the city, not just one corner (2026-09-12)
+
+**"Suggest placements" now looks all over Porto, not just wherever the search
+happened to score highest first.** Until now, all 5 suggested spots for a
+circuit tended to land in the same small neighbourhood — technically the
+best-scoring area, but not the only plausible one. This release adds a second
+way of finding a spot: for every real street in Porto, circuit-finder checks
+whether that street's own longest straight run is close in length to the
+circuit's — the same thing you'd look for scanning a map by eye ("is there a
+street around here about as long and straight as this circuit's back
+straight?"). Real streets like that exist all over the city, so this
+naturally surfaces more varied starting points. On top of that, the final
+list of 5 now actively prefers spots that are meaningfully far apart, so a
+cluster of similar-scoring spots in one area can no longer crowd out every
+other part of town — unless that cluster really is the only good option, in
+which case you still get a full list of 5, exactly as before.
+
+Nothing else changes: the same coverage percentages, hover preview, and
+**Use this** behaviour as always.
+
+---
+
 ## 0.10.1 — Best-effort suggestions stop zig-zagging onto the wrong street (2026-09-12)
 
 **Best-effort suggestions are noticeably straighter and shorter.** Looking

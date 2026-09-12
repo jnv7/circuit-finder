@@ -31,6 +31,8 @@ const input: SearchInput = {
   scale: 1,
   index,
   bbox: { min: [0, 0], max: [2000, 1600] },
+  ways: [streetRect],
+  circuitStraight: { a: rect[0]!, b: rect[1]!, lengthM: 400 },
 }
 
 describe('scoreCandidate', () => {
