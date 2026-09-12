@@ -117,6 +117,26 @@ describe('expandRouteWithGaps', () => {
     expect(legs[1]!.points).toEqual([[100, 0], [10000, 0]])
     expect(legs[2]!.real).toBe(true)
   })
+
+  it('resolves a waypoint to the street it actually sits on, not a nearer vertex on an unrelated street', () => {
+    // A waypoint far out on a long street (90 m from either of its own
+    // endpoints) sits only ~13 m, as the crow flies, from a dead-end street's
+    // endpoint — closer than either of its own street's endpoints, but on a
+    // disconnected street entirely. Resolving by nearest *point on the
+    // network* (not nearest vertex) must still recognise it as sitting on
+    // mainStreet, the same way a routed suggestion's own dense polyline sits
+    // exactly on the streets it was built from — re-resolving it (as
+    // "Use this" + the route/deviation readout do) shouldn't silently
+    // re-snap it onto an unrelated nearby dead end.
+    const mainStreet: Street = [[0, 0], [200, 0]]
+    const decoy: Street = [[100, 8], [100, 108]]
+    const graph = buildStreetGraph([mainStreet, decoy])
+    const waypoints: Point[] = [[90, 0], [110, 0]]
+    const { points, legs } = expandRouteWithGaps(waypoints, graph)
+    expect(legs).toHaveLength(1)
+    expect(legs[0]!.real).toBe(true)
+    expect(points.every((p) => p[1] === 0)).toBe(true)
+  })
 })
 
 describe('routeStats', () => {

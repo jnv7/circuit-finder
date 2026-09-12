@@ -10,11 +10,21 @@ import { pathLength, resample } from '../geometry/path'
 import type { Point } from '../geometry/types'
 
 /**
- * "Any point on the graph" tolerance for resolving a waypoint to its nearest
- * node before routing — generous because a waypoint stored in `AppState.route`
- * is already a network point (Phase 7 click-snapping), not an arbitrary click.
+ * Tolerance for resolving a waypoint back to the network before routing.
+ * Small on purpose: a waypoint stored in `AppState.route` is already a
+ * network point (Phase 7 click-snapping resolves it via `nearestPointM`
+ * before storing it, whether from a manual click or a suggestion's own
+ * legs), so re-resolving at the same modest scale reliably lands back on the
+ * exact edge it came from. This used to resolve via `nearestNode` (nearest
+ * graph *vertex*) with a 100 km tolerance, on the reasoning that "generous
+ * doesn't hurt since it's already a network point" — but a waypoint can sit
+ * anywhere along a long edge, far from either endpoint vertex, and two
+ * waypoints a few metres apart (as in a routed suggestion's dense polyline)
+ * could resolve to different, unrelated nearby vertices, forcing a detour
+ * between them that was never really there. Resolving to the nearest point
+ * *on an edge* instead of the nearest vertex avoids that ambiguity entirely.
  */
-const EXPAND_SNAP_M = 100_000
+const EXPAND_SNAP_M = 30
 
 /** Resample spacing, metres, for the deviation figure. */
 export const DEV_SAMPLE_M = 10
@@ -70,9 +80,9 @@ export function joinWaypoints(
 /**
  * Waypoints joined leg by leg: a real routed path where the graph connects
  * them, a straight line — flagged `real: false` — where it doesn't. Each
- * waypoint resolves to its nearest node with a generous tolerance, since a
- * waypoint stored in `AppState.route` is already a network point (Phase 7
- * click-snapping), not an arbitrary click.
+ * waypoint resolves to the network's nearest *edge point* (not vertex),
+ * since a waypoint stored in `AppState.route` is already a network point
+ * (Phase 7 click-snapping), not an arbitrary click.
  */
 export function expandRouteWithGaps(
   waypoints: readonly Point[],
@@ -81,7 +91,7 @@ export function expandRouteWithGaps(
   if (waypoints.length === 0) return { points: [], legs: [] }
   if (waypoints.length === 1) return { points: [[waypoints[0]![0], waypoints[0]![1]]], legs: [] }
 
-  const nodes = waypoints.map((p) => graph.nearestNode(p, EXPAND_SNAP_M))
+  const nodes = waypoints.map((p) => graph.nearestPointM(p, EXPAND_SNAP_M)?.node ?? null)
   return joinWaypoints(waypoints, nodes, graph)
 }
 
