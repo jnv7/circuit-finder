@@ -6,19 +6,32 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**No Phase 11 spec yet.** Phase 10 shipped 2026-09-12: every bundled circuit
-now returns real best-effort routed suggestions (5 each), but `routedCount`
-is still 0 for all three — `MAX_LENGTH_RATIO` still blocks a *fully*-connected
-loop from ever forming on Porto's real streets, unchanged by design this
-phase. Candidate for Phase 11: the spec's own "not in scope" note — a
-freeform, shape-first graph search that bends the loop street-by-street to
-fit the circuit as it walks, rather than validating/completing Phase 6's
-rigid poses — if best-effort loops (currently inventing 570–2200 m of "street"
-per suggestion on the bundled circuits) don't look close enough to the real
-shape to be useful as-is. Needs a decision before a spec gets written: is
-that worth the complexity, or is best-effort (with the user's own judgement
-on the red gaps) enough for the MVP? Full story: the Phase 10 decision-log
-entry below and
+**Two specs written, neither implemented yet.** Real use of Phase 10 surfaced
+two separate, independent quality problems with suggestions on Porto's real
+data, prompted by a user-reported concrete case (a 4.67 km circuit whose
+best-effort suggestion came back as a 10.02 km loop with visible "there and
+back" jogs, all clustered in one small part of the city):
+
+- [specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md)
+  — best-effort loops snap each sample to the nearest street point blind to
+  direction, so a sample can jog onto a misaligned side street or driveway
+  and back. Fix: snap only to streets running the same way the circuit does
+  there (direction-aware search, reusing Phase 6's own alignment test).
+- [specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-streets.md)
+  — resolves the 2026-09-11 open question below: suggestions cluster in one
+  part of the bbox because the coarse grid sweep only ever proposes candidates
+  from a blind grid, and dedup doesn't encourage spread. Fix: also seed
+  candidates from real streets whose own longest straight matches the
+  circuit's, plus an explicit diversity pass in final selection.
+
+These are separate levers (loop construction quality vs. candidate placement)
+and can ship in either order or independently. Neither has a locked
+implementation order yet — that's the next decision.
+
+Still true from Phase 10: `routedCount` (fully-connected loops) stays 0 for
+all three bundled circuits — `MAX_LENGTH_RATIO` still blocks that path,
+unchanged by either new spec. Full story: the Phase 10 decision-log entry
+below and
 [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
 
 ## Phases
@@ -219,6 +232,48 @@ Spec: [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-ro
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-12 — Phase 12 spec written: anchor candidates on real streets,
+  add diversity to final selection.** Directly prompted by a user-reported
+  case (see the Phase 11 entry below) plus the still-open 2026-09-11
+  clustering question: Phase 6's coarse grid sweep proposes candidates purely
+  by score, and dedup only removes near-duplicates, so a high-scoring
+  neighbourhood can fill every slot. Decision: add a second seeding path —
+  for every bundled street, find its own longest straight
+  (`geometry/straight.ts`'s existing `longestStraight`, already used for the
+  circuit's own readout), keep those within 60–160% of the circuit's longest
+  straight's length, and seed a candidate (both directions along the street)
+  placing the circuit's straight onto each match. These seeds merge into the
+  same coarse pool the grid sweep fills, so they get the same refine/dedup
+  treatment, not a separate code path. Final selection also gains a
+  two-pass accept: fill slots preferring candidates at least 800 m from
+  every already-accepted one, then fill any remaining slots by plain score —
+  so a circuit with only one good spot in Porto still gets a full result set,
+  never fewer than today. No change to the grid sweep, its constants, or
+  Phase 8/10's routing on top of whatever candidates come out. Full spec:
+  `docs/specs/phase-12-anchor-on-real-streets.md`.
+
+- **2026-09-12 — Phase 11 spec written: snap best-effort samples by direction,
+  not just distance.** Prompted by a user-reported concrete case: a 4.67 km
+  circuit's best-effort suggestion came back as a 10.02 km loop with visible
+  "there and back" jogs — not a data-coverage problem (deviation stayed
+  modest) but a construction one. `tryRouteLoop`/`buildBestEffortLoop` snap
+  each of `LOOP_SAMPLES` samples to the nearest street point independently,
+  blind to which way that street runs, so a sample can jog onto a
+  perpendicular side street or driveway and back. Decision: add
+  `StreetGraph.nearestAlignedPointM`, mirroring `nearestPointM` but filtering
+  by heading alignment the same way `StreetIndex.nearestAlignedM` (Phase 6's
+  own candidate scoring) already does, and have both loop-construction
+  functions snap through it instead, using each sample's own local heading
+  (factored out of `objective.ts`'s `scoreCandidate`, not duplicated). A
+  sample with no *aligned* street within `LOOP_SNAP_MAX_M` is treated as
+  unresolved (a gap, or a rejected candidate for `tryRouteLoop`) rather than
+  falling back to the nearest misaligned point — may raise some gap counts,
+  an accepted honest trade. No change to `MAX_LENGTH_RATIO`, `LOOP_SAMPLES`,
+  `LOOP_SNAP_MAX_M`, or manual tracing (unaffected — this only touches
+  suggestion construction). Independent of and separable from Phase 12 (this
+  is about loop quality once placed; Phase 12 is about where candidates come
+  from). Full spec: `docs/specs/phase-11-straighten-best-effort-loops.md`.
 
 - **2026-09-12 — Phase 10 shipped: every circuit gets a real best-effort
   suggestion.** `match/loopSearch.ts` gained `buildBestEffortLoop` — same
@@ -799,11 +854,11 @@ Newest first. Each entry dated.
   centreline (Monaco needs manual assembly; Madrid needs OSM coverage of the
   IFEMA layout).
 - **2026-09-11 — Phase 6 suggestions look clustered in one part of the bbox.**
-  Not confirmed as a bug — could be a genuine result (one part of Porto's street
-  layout just fits better) or the coarse sweep/dedup under-exploring the rest of
-  the grid. Worth a targeted look (e.g. log/plot the coarse-stage candidate
-  anchors across the bbox before top-`COARSE_KEEP` is applied) next time Phase 6
-  is touched.
+  Confirmed by later real-world use (see the 2026-09-12 Phase 12 spec entry
+  above): the coarse sweep/dedup was indeed under-exploring the rest of the
+  grid. Spec written: `docs/specs/phase-12-anchor-on-real-streets.md` (real
+  street straight matching + a diversity pass in final selection) — move to
+  Resolved once shipped and confirmed on real data.
 
 Resolved:
 
