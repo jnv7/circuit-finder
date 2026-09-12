@@ -222,9 +222,19 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   }
 
   /** The waypoints routed through the street graph, in Porto-frame metres,
-   *  split into real legs and gap legs (Phase 10). */
-  const expandedRouteWithGaps = (): { points: Point[]; legs: RouteLeg[] } =>
-    expandRouteWithGaps(state.route.map((c) => project.toLocal(c)), streetGraph)
+   *  split into real legs and gap legs (Phase 10). Cached by `state.route`'s
+   *  identity — every state transition replaces that array (see state.ts) —
+   *  since `renderPanel()` and `render()` each need this and both run per
+   *  update; recomputing it twice re-walks the street graph for no reason. */
+  let cachedRoute: readonly LonLat[] | null = null
+  let cachedExpandedRoute: { points: Point[]; legs: RouteLeg[] } = { points: [], legs: [] }
+  const expandedRouteWithGaps = (): { points: Point[]; legs: RouteLeg[] } => {
+    if (state.route !== cachedRoute) {
+      cachedRoute = state.route
+      cachedExpandedRoute = expandRouteWithGaps(state.route.map((c) => project.toLocal(c)), streetGraph)
+    }
+    return cachedExpandedRoute
+  }
 
   /** Stats for a given routed polyline against the *live* placement's centreline. */
   const routeStatsFor = (expanded: Point[]): RouteStats | null => {

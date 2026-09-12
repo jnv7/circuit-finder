@@ -535,6 +535,33 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
   })
   const edgeSegGrid = buildSegmentGrid(edgeSegments, INDEX_CELL_M)
 
+  // The network's own extent, over both nodes and edge points (edges can bow
+  // out slightly past their endpoint nodes). A point farther than `maxM` from
+  // this box can't have anything in range — checking that up front is O(1),
+  // instead of `expandingSearch` growing its grid query out to `maxM` and
+  // scanning a huge, empty box before giving up (see the graph.test.ts /
+  // map.test.ts note on a waypoint far outside the bundled bbox).
+  let boundsMinX = Infinity
+  let boundsMaxX = -Infinity
+  let boundsMinY = Infinity
+  let boundsMaxY = -Infinity
+  const growBounds = (p: Point): void => {
+    if (p[0] < boundsMinX) boundsMinX = p[0]
+    if (p[0] > boundsMaxX) boundsMaxX = p[0]
+    if (p[1] < boundsMinY) boundsMinY = p[1]
+    if (p[1] > boundsMaxY) boundsMaxY = p[1]
+  }
+  nodePositions.forEach(growBounds)
+  for (const s of edgeSegments) {
+    growBounds(s.a)
+    growBounds(s.b)
+  }
+  const distanceToNetworkBounds = (p: Point): number => {
+    const dx = Math.max(0, boundsMinX - p[0], p[0] - boundsMaxX)
+    const dy = Math.max(0, boundsMinY - p[1], p[1] - boundsMaxY)
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
   /**
    * A `near(p, r)` box query returns every candidate within Euclidean
    * distance `r` (the box always contains the full circle), so the true
@@ -564,6 +591,7 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
   }
 
   function nearestNode(p: Point, maxM: number): NodeId | null {
+    if (distanceToNetworkBounds(p) > maxM) return null
     return expandingSearch(
       (q, r) => nodeGrid.near(q, r),
       (id) => distance(p, nodePositions[id]!),
@@ -573,6 +601,7 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
   }
 
   function nearestPointM(p: Point, maxM: number): { node: NodeId; point: Point; distanceM: number } | null {
+    if (distanceToNetworkBounds(p) > maxM) return null
     type Candidate = { point: Point; edgeIndex: number; segIdx: number; t: number; d: number }
     const found = expandingSearch<Candidate>(
       (q, r) => {
