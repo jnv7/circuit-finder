@@ -43,8 +43,8 @@ import {
 } from '../placements'
 import type { SavedPlacement } from '../placements'
 import { loadPlacements, savePlacements } from './storage'
-import { expandRoute, routeStats } from './trace'
-import type { RouteStats } from './trace'
+import { expandRouteWithGaps, routeStats } from './trace'
+import type { RouteLeg, RouteStats } from './trace'
 import { bind, renderControls, updateReadout } from '../ui/controls'
 
 export { PORTO_CENTER, PORTO_ZOOM }
@@ -54,6 +54,10 @@ const HANDLE_PIXEL_RADIUS = 90
 
 /** Traced-route polyline colour. */
 const ROUTE_COLOR = '#1565c0'
+
+/** Phase 10: a leg the street network can't connect, drawn as a straight
+ *  line and flagged visibly instead of silently included. */
+const GAP_COLOR = '#c62828'
 
 /** A click within this distance of the street network snaps to it while tracing. */
 const SNAP_MAX_M = 30
@@ -171,20 +175,37 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     zIndexOffset: 1000,
   }).addTo(map)
 
-  // Traced route: one polyline, plus a vertex-marker layer shown only in trace mode.
+  // Traced route: one polyline (real legs), plus a vertex-marker layer shown
+  // only in trace mode. Phase 10: a second polyline draws whichever legs the
+  // graph couldn't connect, red and dashed, fed as a multi-segment polyline
+  // (one array per gap leg) so disjoint stretches don't join into one line.
   const routeLine = L.polyline([], {
     weight: 4,
     color: ROUTE_COLOR,
     interactive: false,
   }).addTo(map)
+  const routeGapLine = L.polyline([], {
+    weight: 4,
+    color: GAP_COLOR,
+    dashArray: '6 4',
+    interactive: false,
+  }).addTo(map)
   const vertexLayer = L.layerGroup().addTo(map)
 
   // Phase 8: a hovered routed suggestion's real loop, dashed — inert, never
-  // bound to `state.route`, cleared whenever nothing is previewed.
+  // bound to `state.route`, cleared whenever nothing is previewed. Phase 10:
+  // a matching gap-leg layer for a best-effort suggestion's invented legs.
   const previewRouteLine = L.polyline([], {
     weight: 4,
     color: ROUTE_COLOR,
     dashArray: '5 6',
+    opacity: 0.7,
+    interactive: false,
+  }).addTo(map)
+  const previewGapLine = L.polyline([], {
+    weight: 4,
+    color: GAP_COLOR,
+    dashArray: '6 4',
     opacity: 0.7,
     interactive: false,
   }).addTo(map)
@@ -200,8 +221,10 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     )
   }
 
-  /** The waypoints routed through the street graph, in Porto-frame metres. */
-  const expandedRoute = (): Point[] => expandRoute(state.route.map((c) => project.toLocal(c)), streetGraph)
+  /** The waypoints routed through the street graph, in Porto-frame metres,
+   *  split into real legs and gap legs (Phase 10). */
+  const expandedRouteWithGaps = (): { points: Point[]; legs: RouteLeg[] } =>
+    expandRouteWithGaps(state.route.map((c) => project.toLocal(c)), streetGraph)
 
   /** Stats for a given routed polyline against the *live* placement's centreline. */
   const routeStatsFor = (expanded: Point[]): RouteStats | null => {
@@ -211,7 +234,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     )
     return routeStats(expanded, ring)
   }
-  const currentRouteStats = (): RouteStats | null => routeStatsFor(expandedRoute())
+  const currentRouteStats = (): RouteStats | null => routeStatsFor(expandedRouteWithGaps().points)
   const circuitLapM = (): number =>
     readout(circuitById(state.circuitId), state.placement.scale).lapM
 
@@ -264,17 +287,22 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     }
 
     // Phase 8: a hovered routed suggestion's real loop, dashed, independent
-    // of the live route.
-    previewRouteLine.setLatLngs(
-      previewSuggestion?.loop
-        ? previewSuggestion.loop.points.map((p) => toLatLng(project.toLonLat(p)))
-        : [],
-    )
+    // of the live route. Phase 10: a best-effort suggestion's legs split into
+    // the same real/gap layers as the traced route below.
+    const previewLegs: RouteLeg[] = previewSuggestion?.loop
+      ? [{ points: previewSuggestion.loop.points, real: true }]
+      : (previewSuggestion?.bestEffort?.legs ?? [])
+    const toLegLatLngs = (legs: RouteLeg[]): L.LatLngExpression[][] =>
+      legs.map((l) => l.points.map((p) => toLatLng(project.toLonLat(p))))
+    previewRouteLine.setLatLngs(toLegLatLngs(previewLegs.filter((l) => l.real)))
+    previewGapLine.setLatLngs(toLegLatLngs(previewLegs.filter((l) => !l.real)))
 
     // Traced route: drawn as the routed path through the street graph, not
     // the raw clicked waypoints — vertex markers still mark the waypoints.
-    const expanded = expandedRoute()
-    routeLine.setLatLngs(expanded.map((p) => toLatLng(project.toLonLat(p))))
+    // Real legs and gap legs (Phase 10) are two disjoint-segment polylines.
+    const expanded = expandedRouteWithGaps()
+    routeLine.setLatLngs(toLegLatLngs(expanded.legs.filter((l) => l.real)))
+    routeGapLine.setLatLngs(toLegLatLngs(expanded.legs.filter((l) => !l.real)))
     vertexLayer.clearLayers()
     if (tracing) {
       for (const p of state.route) {
@@ -294,7 +322,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       lapM,
       straightM,
       nearFraction,
-      routeStats: routeStatsFor(expanded),
+      routeStats: routeStatsFor(expanded.points),
       circuitLengthM: circuitLapM(),
     })
   }
@@ -532,7 +560,8 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         ) {
           return
         }
-        const route = chosen.loop ? chosen.loop.points.map((p) => project.toLonLat(p)) : []
+        const routePoints = chosen.loop?.points ?? chosen.bestEffort?.points ?? []
+        const route = routePoints.map((p) => project.toLonLat(p))
         state = applyPlacement(state, chosen.placement, route)
         clearSuggestions()
         previewingSaved = false
@@ -643,7 +672,9 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       dragTarget.off()
       handle.off()
       routeLine.remove()
+      routeGapLine.remove()
       previewRouteLine.remove()
+      previewGapLine.remove()
       vertexLayer.remove()
       map.off()
       map.remove()

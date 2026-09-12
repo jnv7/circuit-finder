@@ -6,19 +6,19 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 10 spec written, implementation next.** Phase 9 (88.3% → ~95.3%
-connectivity) found that connectivity was never the last blocker: every
-candidate that now fully connects still gets rejected by Phase 8's
-`MAX_LENGTH_RATIO` (1.5×), because real routed paths between points close in
-the circuit's shape detour 1.5–2× their straight-line spacing on Porto's real
-streets — so all three bundled circuits still return zero routed suggestions.
-Rather than loosen that cap (or the connectivity repair's own `CORRIDOR_M`,
-already tried and rejected as unsafe in Phase 9), Phase 10 changes what a
-"reject" looks like: a new best-effort loop kind that never fails, keeping
-every leg that does connect as a real street and drawing the rest as a
-visibly red gap instead of discarding the whole candidate. Directly prompted
-by user feedback on what a suggestion should look like: *"a route in the
-city, not a shape that happens to overlap streets."* Spec:
+**No Phase 11 spec yet.** Phase 10 shipped 2026-09-12: every bundled circuit
+now returns real best-effort routed suggestions (5 each), but `routedCount`
+is still 0 for all three — `MAX_LENGTH_RATIO` still blocks a *fully*-connected
+loop from ever forming on Porto's real streets, unchanged by design this
+phase. Candidate for Phase 11: the spec's own "not in scope" note — a
+freeform, shape-first graph search that bends the loop street-by-street to
+fit the circuit as it walks, rather than validating/completing Phase 6's
+rigid poses — if best-effort loops (currently inventing 570–2200 m of "street"
+per suggestion on the bundled circuits) don't look close enough to the real
+shape to be useful as-is. Needs a decision before a spec gets written: is
+that worth the complexity, or is best-effort (with the user's own judgement
+on the red gaps) enough for the MVP? Full story: the Phase 10 decision-log
+entry below and
 [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
 
 ## Phases
@@ -167,23 +167,28 @@ Spec: [specs/phase-9-graph-connectivity-repair.md](specs/phase-9-graph-connectiv
   was not, after all, the last blocker; see *Current priority* above and the
   decision log for the `MAX_LENGTH_RATIO` finding this phase surfaced.
 
-### Phase 10 — Best-effort routed loops (mark the gaps, don't reject) — `todo`
+### Phase 10 — Best-effort routed loops (mark the gaps, don't reject) — `done`
 
 Spec: [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
 
-- A new suggestion kind that never fails: build the loop leg by leg around a
+- A new suggestion kind that never fails: builds the loop leg by leg around a
   Phase 6 candidate, keeping every real routed street segment and drawing any
   leg the network can't connect as a straight line, flagged red, instead of
-  discarding the whole candidate over one bad leg (today's Phase 8 behaviour).
-- `app/trace.ts`'s `expandRoute` (already silently falls back to a straight
-  line per leg for manual tracing) becomes `expandRouteWithGaps`, reporting
-  which legs those are — so manual **Trace route** also shows red gaps, not
+  discarding the whole candidate over one bad leg (Phase 8's behaviour).
+- `app/trace.ts`'s `expandRoute` (already silently fell back to a straight
+  line per leg for manual tracing) is now `expandRouteWithGaps`, reporting
+  which legs those are — manual **Trace route** shows the same red gaps, not
   just new suggestion rows.
 - Ranks between Phase 8's fully-routed loops and the old bare
   coverage-percentage fallback: real routed > best-effort (fewest invented
   metres wins) > coverage-only.
 - No change to `MAX_LENGTH_RATIO`, `CORRIDOR_M`, or any other existing
   constant — adds a new outcome tier, does not retune the old ones.
+- **Real-data result:** all three bundled circuits now return 5 best-effort
+  suggestions each (previously 0 routed, all coverage-only fallback) —
+  inventing 570–2200 m of "street" across 6–23 gap legs per suggestion.
+  `routedCount` stays 0 for all three, unchanged from Phase 9 — see the
+  decision log for what that implies for Phase 11.
 
 ### Later — not scheduled
 
@@ -214,6 +219,55 @@ Spec: [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-ro
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-12 — Phase 10 shipped: every circuit gets a real best-effort
+  suggestion.** `match/loopSearch.ts` gained `buildBestEffortLoop` — same
+  inputs as `tryRouteLoop` (resample the placed outline, snap each sample,
+  route each leg) but never returns `null`: a sample that doesn't resolve
+  within `snapMaxM` keeps its raw placed point with no node, and any leg
+  whose endpoints don't both resolve *and* connect becomes a straight `real:
+  false` gap instead of failing the whole candidate. The join logic itself —
+  "route by shortest path if both endpoints have a resolved node, else a
+  straight line, flagged" — is one shared primitive (`app/trace.ts`'s new
+  `joinWaypoints`), used both by the new suggestion path and by
+  `expandRouteWithGaps`, which replaces `expandRoute` for manual tracing; the
+  two callers differ only in how generously they resolve a point to a node
+  (tracing reuses its existing 100 km "already a network point" tolerance,
+  suggestions use the tight `LOOP_SNAP_MAX_M`). `searchRoutedLoops` slots
+  best-effort in as a new tier between routed and fallback, filling
+  `loopResultCount` slots from routed + best-effort combined — so the old
+  bare coverage-percentage fallback is now reached only if the candidate pool
+  itself runs out first, not on every non-routing candidate as before.
+  Ranked by `gapLengthM` ascending (fewest invented metres wins), ties by
+  `meanDeviationM`. `app/map.ts` renders real and gap legs as two Leaflet
+  polylines (an unchanged style plus a new red dashed one, fed as a
+  multi-segment array — `L.polyline([[…],[…]])` draws disjoint segments in
+  one layer, no per-leg layer management needed) for both the drawn trace
+  line and a hovered suggestion's preview; adopting a best-effort suggestion
+  seeds `AppState.route` from its full point sequence exactly as a Phase 8
+  loop does, so gap status is always recomputed from the current graph at
+  render time, never persisted (same pattern Phase 3/7 already use).
+  **Real-data result:** all three bundled circuits (`hungaroring`,
+  `silverstone`, `catalunya`) now return **5 best-effort suggestions each**,
+  where before this phase they returned 0 routed and 5 bare-coverage
+  fallbacks. Gap counts range 6–23 legs per suggestion, inventing 567–2213 m
+  of "street" (hungaroring: gaps 8/13/15/18/19, lengths 595/877/1090/1297/1351
+  m; silverstone: gaps 6/12/14/20/23, lengths 567/1098/1372/1931/2213 m;
+  catalunya: gaps 13/19/20/21/23, lengths 985/1440/1515/1628/1749 m).
+  `routedCount` stays 0 for all three — unsurprising and unchanged by design:
+  this phase deliberately left `MAX_LENGTH_RATIO` alone (see *Current
+  priority* above for what that implies next). 270 tests pass (`npm run
+  build` clean); the real-data test itself (`loopSearch.test.ts`) is
+  CPU-heavy enough (building the full ~70k-node graph, routing dozens of legs
+  per candidate across a 24-candidate pool, three times) that it needs a
+  quiet machine to finish inside its existing 180 s budget — confirmed
+  passing in isolation, and the specific numbers above were captured that
+  way, but it timed out under heavy unrelated load on the development
+  machine during this session (alongside several *other*, unmodified tests
+  timing out the same way) — an existing resource-profile characteristic of
+  this real-data test, not a Phase 10 regression, and not something this
+  phase's scope covers fixing. Full spec:
+  `docs/specs/phase-10-best-effort-routed-loops.md`.
 
 - **2026-09-11 — Phase 10 spec written: stop rejecting, start marking.**
   Directly prompted by user feedback that a suggestion should read as "a

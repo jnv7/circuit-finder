@@ -3,7 +3,7 @@
 // the harder question — is there a real, fully street-connected closed loop
 // around each candidate's placed outline? — by routing through Phase 7's
 // graph, not by estimating. See docs/specs/phase-8-routed-loop-suggestions.md.
-import { routeStats } from '../app/trace'
+import { joinWaypoints, routeDeviation, routeStats } from '../app/trace'
 import { pathLength } from '../geometry/path'
 import type { Point } from '../geometry/types'
 import { rotate as rotateVec, scale as scaleVec } from '../geometry/vector'
@@ -12,6 +12,7 @@ import { portoProjection } from '../porto'
 import { sampleIndices } from './objective'
 import { searchPlacements } from './search'
 import type {
+  BestEffortLoop,
   Candidate,
   LoopSearchOptions,
   LoopSearchProgress,
@@ -106,18 +107,91 @@ export function tryRouteLoop(
   }
 }
 
+/**
+ * Never null: builds a closed loop around `candidate`'s placed outline the
+ * same way `tryRouteLoop` does — resample, snap, route each leg — but instead
+ * of failing on the first unresolved sample or unconnected pair, keeps every
+ * leg, real or gap. A sample that doesn't resolve within `opts.snapMaxM` uses
+ * its raw placed point with no node, so the leg on either side of it becomes
+ * a straight-line gap rather than silently snapping somewhere unrelated. No
+ * `MAX_LENGTH_RATIO` cap: the real length is reported, not gated.
+ */
+export function buildBestEffortLoop(
+  circuitSamplesM: readonly Point[],
+  candidate: Candidate,
+  scale: number,
+  graph: StreetGraph,
+  opts?: { samples?: number; snapMaxM?: number },
+): BestEffortLoop {
+  const samples = opts?.samples ?? LOOP_SAMPLES
+  const snapMaxM = opts?.snapMaxM ?? LOOP_SNAP_MAX_M
+
+  const ring = circuitSamplesM
+  const idx = sampleIndices(ring.length, samples)
+  const n = idx.length
+
+  const waypoints: Point[] = new Array(n)
+  const nodes: Array<NodeId | null> = new Array(n)
+  for (let s = 0; s < n; s++) {
+    const p = placePoint(ring[idx[s]!]!, candidate, scale)
+    const resolved = graph.nearestPointM(p, snapMaxM)
+    waypoints[s] = resolved ? resolved.point : p
+    nodes[s] = resolved ? resolved.node : null
+  }
+  // Close the loop: repeat the first waypoint/node so the join covers the
+  // closing leg too, same as tryRouteLoop's `(s + 1) % n`.
+  waypoints.push(waypoints[0]!)
+  nodes.push(nodes[0]!)
+
+  const { points, legs } = joinWaypoints(waypoints, nodes, graph)
+
+  let gapLengthM = 0
+  let gapCount = 0
+  for (const leg of legs) {
+    if (!leg.real) {
+      gapLengthM += pathLength(leg.points, false)
+      gapCount++
+    }
+  }
+
+  const placedRing = ring.map((p) => placePoint(p, candidate, scale))
+  const { meanM, maxM } = routeDeviation(points, placedRing)
+
+  return {
+    legs,
+    points,
+    lengthM: pathLength(points, false),
+    meanDeviationM: meanM,
+    maxDeviationM: maxM,
+    gapLengthM,
+    gapCount,
+  }
+}
+
 function byDeviation(a: RoutedSuggestion, b: RoutedSuggestion): number {
   return a.loop!.meanDeviationM - b.loop!.meanDeviationM || a.loop!.maxDeviationM - b.loop!.maxDeviationM
+}
+
+function byGapThenDeviation(a: RoutedSuggestion, b: RoutedSuggestion): number {
+  return (
+    a.bestEffort!.gapLengthM - b.bestEffort!.gapLengthM ||
+    a.bestEffort!.meanDeviationM - b.bestEffort!.meanDeviationM
+  )
 }
 
 /**
  * Run Phase 6's search for a larger candidate pool (`loopCandidatePool`),
  * then try routing each (best geometry rank first) until `loopResultCount`
- * routed suggestions — simple or not — are found or the pool runs out.
- * Untried or failed candidates backfill the remainder as fallback (unrouted)
- * suggestions, in their original rank. Final order: every simple routed
- * suggestion (by `loop.meanDeviationM` ascending), then every non-simple
- * routed one (same ordering), then fallbacks in Phase 6's rank order.
+ * routed or best-effort suggestions are found or the pool runs out: a full
+ * `tryRouteLoop` first, and only when that fails, `buildBestEffortLoop`
+ * (Phase 10) — which never fails, so it always fills the slot. Untried or
+ * failed candidates backfill the remainder as fallback (unrouted)
+ * suggestions, in their original rank — reached only if the pool itself runs
+ * out before filling every slot, since best-effort loops always succeed.
+ * Final order: every simple routed suggestion (by `loop.meanDeviationM`
+ * ascending), then every non-simple routed one (same ordering), then every
+ * best-effort one (by `bestEffort.gapLengthM` ascending, ties by
+ * `meanDeviationM`), then fallbacks in Phase 6's rank order.
  */
 export function* searchRoutedLoops(
   input: SearchInput,
@@ -144,10 +218,11 @@ export function* searchRoutedLoops(
   const routeTotal = candidates.length + 1
 
   const routed: RoutedSuggestion[] = []
+  const bestEffort: RoutedSuggestion[] = []
   const fallback: Suggestion[] = []
   for (let i = 0; i < candidates.length; i++) {
     const s = candidates[i]!
-    if (routed.length < loopResultCount) {
+    if (routed.length + bestEffort.length < loopResultCount) {
       const anchorM = project.toLocal(s.placement.anchor)
       const candidate: Candidate = { anchorM, rotationRad: s.placement.rotationRad }
       const loop = tryRouteLoop(input.circuitSamplesM, candidate, input.scale, graph, {
@@ -155,8 +230,15 @@ export function* searchRoutedLoops(
         snapMaxM: loopSnapMaxM,
         maxLengthRatio,
       })
-      if (loop) routed.push({ ...s, loop })
-      else fallback.push(s)
+      if (loop) {
+        routed.push({ ...s, loop })
+      } else {
+        const be = buildBestEffortLoop(input.circuitSamplesM, candidate, input.scale, graph, {
+          samples: loopSamples,
+          snapMaxM: loopSnapMaxM,
+        })
+        bestEffort.push({ ...s, bestEffort: be })
+      }
     } else {
       fallback.push(s)
     }
@@ -166,7 +248,13 @@ export function* searchRoutedLoops(
 
   const simpleRouted = routed.filter((r) => r.loop!.simple).sort(byDeviation)
   const nonSimpleRouted = routed.filter((r) => !r.loop!.simple).sort(byDeviation)
-  const backfillCount = Math.max(0, loopResultCount - routed.length)
+  const rankedBestEffort = [...bestEffort].sort(byGapThenDeviation)
+  const backfillCount = Math.max(0, loopResultCount - routed.length - bestEffort.length)
 
-  return [...simpleRouted, ...nonSimpleRouted, ...fallback.slice(0, backfillCount)]
+  return [
+    ...simpleRouted,
+    ...nonSimpleRouted,
+    ...rankedBestEffort,
+    ...fallback.slice(0, backfillCount),
+  ]
 }

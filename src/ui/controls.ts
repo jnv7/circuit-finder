@@ -87,8 +87,10 @@ export function formatDeviation(stats: RouteStats): string {
 /**
  * The label for one suggestion row: a routed loop reads as its real length
  * and deviation from the circuit shape ("simple: false" flagged visibly, not
- * just ranked lower); a fallback (no real loop found) keeps Phase 6's
- * coverage-percentage wording, reading clearly as neither of the above. Pure.
+ * just ranked lower); a best-effort loop (Phase 10, no full loop found) reads
+ * as its real length plus how many street gaps it invents and their total
+ * length; a fallback (no real attempt at all) keeps Phase 6's coverage-
+ * percentage wording, reading clearly as none of the above. Pure.
  */
 export function formatSuggestionLabel(s: RoutedSuggestion): string {
   if (s.loop) {
@@ -97,6 +99,12 @@ export function formatSuggestionLabel(s: RoutedSuggestion): string {
     return s.loop.simple
       ? `${distance} closed loop · ${deviation} off shape`
       : `${distance} loop (retraces a street) · ${deviation} off shape`
+  }
+  if (s.bestEffort) {
+    const { lengthM, gapCount, gapLengthM, meanDeviationM } = s.bestEffort
+    const distance = formatDistance(lengthM)
+    const gaps = `${gapCount} street gap${gapCount === 1 ? '' : 's'} (${formatDistance(gapLengthM)})`
+    return `${distance} loop · ${gaps} · ~${Math.round(meanDeviationM)} m off shape`
   }
   const pct = Math.round(Math.max(0, Math.min(1, s.coverageFraction)) * 100)
   return `${pct}% on streets · ~${Math.round(s.meanDeviationM)} m avg`

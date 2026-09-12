@@ -1,6 +1,7 @@
 // Shared types for the Phase 6 placement search. See
 // docs/specs/phase-6-suggested-placements.md.
 import type { Placement } from '../app/overlay'
+import type { RouteLeg } from '../app/trace'
 import type { Point } from '../geometry/types'
 import type { StreetIndex } from '../streets'
 
@@ -68,10 +69,30 @@ export type RoutedLoop = {
   simple: boolean
 }
 
+/** Phase 10: a loop that always exists — every leg is a real routed street
+ *  segment or, where the network doesn't cooperate, a straight "gap" segment,
+ *  clearly flagged rather than silently included or the candidate rejected.
+ *  See docs/specs/phase-10-best-effort-routed-loops.md. */
+export type BestEffortLoop = {
+  legs: RouteLeg[]
+  /** The closed loop actually run, Porto-frame metres, first point repeated
+   *  at the end. */
+  points: Point[]
+  lengthM: number
+  meanDeviationM: number
+  maxDeviationM: number
+  /** Straight-line length of every gap leg, metres — the ranking key. */
+  gapLengthM: number
+  gapCount: number
+}
+
 /** A Phase 6 `Suggestion` with a routed loop attached, when one was found. */
 export type RoutedSuggestion = Suggestion & {
-  /** Present only when a real, fully connected loop was found for this pose. */
+  /** A fully-connected loop (Phase 8). Mutually exclusive with `bestEffort`. */
   loop?: RoutedLoop
+  /** A best-effort loop (Phase 10), present when no fully-routed loop was
+   *  found for this candidate but a real attempt still exists. */
+  bestEffort?: BestEffortLoop
 }
 
 export type LoopSearchProgress = SearchProgress & { phase: 'search' | 'route' }

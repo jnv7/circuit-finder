@@ -368,13 +368,24 @@ describe('renderControls — suggest placements section', () => {
     expect(html).toContain('data-role="suggest-clear"')
   })
 
-  it('results: renders the right label for a simple loop, a non-simple loop, and a fallback row', () => {
+  it('results: renders the right label for a simple loop, a non-simple loop, a best-effort loop, and a fallback row', () => {
     const suggestions = [
       sampleSuggestion({
         loop: { points: [], lengthM: 3400, meanDeviationM: 12, maxDeviationM: 30, simple: true },
       }),
       sampleSuggestion({
         loop: { points: [], lengthM: 3400, meanDeviationM: 12, maxDeviationM: 30, simple: false },
+      }),
+      sampleSuggestion({
+        bestEffort: {
+          legs: [],
+          points: [],
+          lengthM: 3100,
+          meanDeviationM: 14,
+          maxDeviationM: 40,
+          gapLengthM: 180,
+          gapCount: 2,
+        },
       }),
       sampleSuggestion(),
     ]
@@ -383,8 +394,9 @@ describe('renderControls — suggest placements section', () => {
     )
     expect(html).toContain('closed loop')
     expect(html).toContain('retraces a street')
+    expect(html).toContain('2 street gaps')
     expect(html).toContain('on streets')
-    expect((html.match(/data-role="suggest-use"/g) ?? []).length).toBe(3)
+    expect((html.match(/data-role="suggest-use"/g) ?? []).length).toBe(4)
   })
 
   it('results: shows an empty note when the search found nothing', () => {
@@ -432,6 +444,45 @@ describe('formatSuggestionLabel', () => {
       loop: { points: [], lengthM: 3400, meanDeviationM: 12.4, maxDeviationM: 30, simple: false },
     })
     expect(label).toContain('retraces a street')
+  })
+
+  it('a best-effort loop reads distance, gap count/length, then deviation, no coverage', () => {
+    const label = formatSuggestionLabel({
+      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
+      coverageFraction: 0.5,
+      meanDeviationM: 5,
+      maxDeviationM: 10,
+      bestEffort: {
+        legs: [],
+        points: [],
+        lengthM: 3100,
+        meanDeviationM: 14,
+        maxDeviationM: 40,
+        gapLengthM: 180,
+        gapCount: 2,
+      },
+    })
+    expect(label).toBe('3.10 km loop · 2 street gaps (180 m) · ~14 m off shape')
+  })
+
+  it('a single street gap reads in the singular', () => {
+    const label = formatSuggestionLabel({
+      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
+      coverageFraction: 0.5,
+      meanDeviationM: 5,
+      maxDeviationM: 10,
+      bestEffort: {
+        legs: [],
+        points: [],
+        lengthM: 1000,
+        meanDeviationM: 8,
+        maxDeviationM: 20,
+        gapLengthM: 50,
+        gapCount: 1,
+      },
+    })
+    expect(label).toContain('1 street gap (50 m)')
+    expect(label).not.toContain('gaps')
   })
 })
 

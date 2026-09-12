@@ -4,7 +4,7 @@
 // calling. There is deliberately no single "match %": the numbers are plain
 // measurements (metres), the user judges what is close enough. See
 // docs/specs/phase-5-trace-and-study.md.
-import type { StreetGraph } from '../graph'
+import type { NodeId, StreetGraph } from '../graph'
 import { distanceToSegment } from '../geometry/nearest'
 import { pathLength, resample } from '../geometry/path'
 import type { Point } from '../geometry/types'
@@ -28,34 +28,61 @@ export type RouteStats = {
   maxDeviationM: number
 }
 
+/** One stretch of a joined route: a real routed street segment, or — where
+ *  the network didn't cooperate — a straight line flagged `real: false`. */
+export type RouteLeg = { points: Point[]; real: boolean }
+
 /** Length of the traced route (open polyline). */
 export function routeLengthM(metricRoute: readonly Point[]): number {
   return pathLength(metricRoute, false)
 }
 
 /**
- * The full point sequence actually run: waypoints joined by their real
- * shortest path through `graph`, concatenated without duplicating the join
- * point between legs. Falls back to a straight line for any consecutive pair
- * the graph can't connect (no nearby node, or disconnected components) —
- * advisory, never throws.
+ * Join consecutive waypoints leg by leg: `nodes[i]` is the network node
+ * already resolved for `waypoints[i]` (or `null` if none was), and a leg
+ * routes by real shortest path when both its endpoints resolved and the graph
+ * connects them, else falls back to a straight line between the two points
+ * actually used, flagged `real: false`. Shared by `expandRouteWithGaps`
+ * (manual tracing) and `match/loopSearch`'s `buildBestEffortLoop` (routed
+ * suggestions) — the two differ only in how generously they resolve nodes.
  */
-export function expandRoute(waypoints: readonly Point[], graph: StreetGraph): Point[] {
-  if (waypoints.length === 0) return []
-  if (waypoints.length === 1) return [[waypoints[0]![0], waypoints[0]![1]]]
-
-  const out: Point[] = []
+export function joinWaypoints(
+  waypoints: readonly Point[],
+  nodes: readonly (NodeId | null)[],
+  graph: StreetGraph,
+): { points: Point[]; legs: RouteLeg[] } {
+  const points: Point[] = []
+  const legs: RouteLeg[] = []
   for (let i = 1; i < waypoints.length; i++) {
     const a = waypoints[i - 1]!
     const b = waypoints[i]!
-    const fromNode = graph.nearestNode(a, EXPAND_SNAP_M)
-    const toNode = graph.nearestNode(b, EXPAND_SNAP_M)
+    const fromNode = nodes[i - 1]!
+    const toNode = nodes[i]!
     const routed = fromNode !== null && toNode !== null ? graph.shortestPath(fromNode, toNode) : null
-    const leg = routed ? routed.points : [a, b]
-    if (out.length === 0) out.push(leg[0]!)
-    for (let j = 1; j < leg.length; j++) out.push(leg[j]!)
+    const legPoints = routed ? routed.points : [a, b]
+    legs.push({ points: legPoints, real: routed !== null })
+    if (points.length === 0) points.push(legPoints[0]!)
+    for (let j = 1; j < legPoints.length; j++) points.push(legPoints[j]!)
   }
-  return out
+  return { points, legs }
+}
+
+/**
+ * Waypoints joined leg by leg: a real routed path where the graph connects
+ * them, a straight line — flagged `real: false` — where it doesn't. Each
+ * waypoint resolves to its nearest node with a generous tolerance, since a
+ * waypoint stored in `AppState.route` is already a network point (Phase 7
+ * click-snapping), not an arbitrary click.
+ */
+export function expandRouteWithGaps(
+  waypoints: readonly Point[],
+  graph: StreetGraph,
+): { points: Point[]; legs: RouteLeg[] } {
+  if (waypoints.length === 0) return { points: [], legs: [] }
+  if (waypoints.length === 1) return { points: [[waypoints[0]![0], waypoints[0]![1]]], legs: [] }
+
+  const nodes = waypoints.map((p) => graph.nearestNode(p, EXPAND_SNAP_M))
+  return joinWaypoints(waypoints, nodes, graph)
 }
 
 /** Nearest distance from `p` to a polyline (its closing segment included when `closed`). */

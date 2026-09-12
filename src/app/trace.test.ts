@@ -3,7 +3,7 @@ import fc from 'fast-check'
 import { buildStreetGraph } from '../graph'
 import type { Street } from '../streets'
 import type { Point } from '../geometry/types'
-import { DEV_SAMPLE_M, expandRoute, routeDeviation, routeLengthM, routeStats } from './trace'
+import { DEV_SAMPLE_M, expandRouteWithGaps, routeDeviation, routeLengthM, routeStats } from './trace'
 
 // A square ring, 400 m on a side, centred on the origin.
 const ring: Point[] = [
@@ -63,7 +63,7 @@ describe('routeDeviation', () => {
   })
 })
 
-describe('expandRoute', () => {
+describe('expandRouteWithGaps', () => {
   // Three streets meeting exactly at the origin (west/north/east spokes).
   const spokes: Street[] = [
     [[0, 0], [-100, 0]],
@@ -74,9 +74,11 @@ describe('expandRoute', () => {
 
   it('concatenates the two routed legs without duplicating the join point', () => {
     const waypoints: Point[] = [[-100, 0], [0, 100], [100, 0]]
-    const expanded = expandRoute(waypoints, graph)
-    expect(expanded).toEqual([[-100, 0], [0, 0], [0, 100], [0, 0], [100, 0]])
-    expect(routeLengthM(expanded)).toBeCloseTo(400, 6)
+    const { points, legs } = expandRouteWithGaps(waypoints, graph)
+    expect(points).toEqual([[-100, 0], [0, 0], [0, 100], [0, 0], [100, 0]])
+    expect(routeLengthM(points)).toBeCloseTo(400, 6)
+    expect(legs).toHaveLength(2)
+    expect(legs.every((l) => l.real)).toBe(true)
   })
 
   it('falls back to a straight line for a waypoint pair in disconnected components', () => {
@@ -86,8 +88,9 @@ describe('expandRoute', () => {
     ]
     const g = buildStreetGraph(disconnected)
     const waypoints: Point[] = [[0, 0], [10000, 10000]]
-    const expanded = expandRoute(waypoints, g)
-    expect(expanded).toEqual([[0, 0], [10000, 10000]])
+    const { points, legs } = expandRouteWithGaps(waypoints, g)
+    expect(points).toEqual([[0, 0], [10000, 10000]])
+    expect(legs).toEqual([{ points: [[0, 0], [10000, 10000]], real: false }])
   })
 
   it('measures the real routed distance, not the straight-line waypoint distance', () => {
@@ -95,9 +98,24 @@ describe('expandRoute', () => {
     // line between the two waypoints is only ~141 m.
     const waypoints: Point[] = [[-100, 0], [0, 100]]
     const straightLineM = Math.hypot(100, 100)
-    const expanded = expandRoute(waypoints, graph)
-    expect(routeLengthM(expanded)).toBeCloseTo(200, 6)
-    expect(routeLengthM(expanded)).toBeGreaterThan(straightLineM + 10)
+    const { points } = expandRouteWithGaps(waypoints, graph)
+    expect(routeLengthM(points)).toBeCloseTo(200, 6)
+    expect(routeLengthM(points)).toBeGreaterThan(straightLineM + 10)
+  })
+
+  it('a disconnected pair among otherwise-connected waypoints produces exactly one gap leg', () => {
+    const disconnected: Street[] = [
+      [[0, 0], [100, 0]],
+      [[10000, 0], [10100, 0]],
+    ]
+    const g = buildStreetGraph(disconnected)
+    const waypoints: Point[] = [[0, 0], [100, 0], [10000, 0], [10100, 0]]
+    const { legs } = expandRouteWithGaps(waypoints, g)
+    expect(legs).toHaveLength(3)
+    expect(legs[0]!.real).toBe(true)
+    expect(legs[1]!.real).toBe(false)
+    expect(legs[1]!.points).toEqual([[100, 0], [10000, 0]])
+    expect(legs[2]!.real).toBe(true)
   })
 })
 

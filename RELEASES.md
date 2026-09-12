@@ -8,6 +8,25 @@ Newest release first.
 
 ---
 
+## 0.10.0 — Suggestions and traced routes now show exactly where the street runs out (2026-09-12)
+
+**"Suggest placements" finally shows real routed loops for Porto — by being
+honest about the parts that aren't.** Until now, a spot only made the list as
+a fully-connected loop, or fell back to a bare "on streets" percentage with no
+route at all. Most rejected spots were actually *almost* runnable — one or two
+stretches out of dozens just didn't have a matching street. This release adds
+a middle option: a real route built as far as the street network allows,
+with any unmatched stretch drawn as a clearly marked **red gap** instead of
+being silently patched over or thrown away. A row now reads like *"3.1 km
+loop · 2 street gaps (180 m) · ~14 m off shape"* — you see exactly how much is
+real street and how much is invented, and decide for yourself.
+
+**Manual "Trace route" gets the same honesty.** If a stretch you click has no
+matching street, the drawn line now shows that gap in red too, instead of
+quietly drawing a straight line as before.
+
+---
+
 ## 0.9.1 — Porto's street map understands itself better (2026-09-11)
 
 **Nothing changes on screen yet — this release is about why some good-looking
