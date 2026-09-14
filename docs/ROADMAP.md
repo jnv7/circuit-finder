@@ -6,12 +6,20 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phases 11 and 12 both shipped — the two independent quality problems Phase
-10's real-data result surfaced (loop construction quality and candidate
-placement diversity) are both addressed. No Phase 13 spec is written yet;**
-the next priority should be picked from the *Later — not scheduled* list
-below, informed by further real-world use of Suggest placements now that both
-levers have landed.
+**Phase 13 shipped 2026-09-13: `match/loopSearch.ts` is deleted and
+**Suggest placements** is back to Phase 6/12's honest coverage-percentage
+list** — see the decision log below for confirmation (`grep` for the deleted
+types returns nothing, 253 tests pass, `npm run build` clean). Next up:
+
+- [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md)
+  — the actual replacement: reduce the circuit to its significant corners,
+  search each independently against real streets (not one rigid transform for
+  all of them), route between them with the existing graph/A*, and let the
+  user drag any corner to a better real street — then commit the result as a
+  normal traced route.
+
+The *Later — not scheduled* list below is unchanged and still available once
+Phase 14 lands.
 
 - ~~[specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md)
   — best-effort loops snap each sample to the nearest street point blind to
@@ -265,6 +273,32 @@ Spec: [specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-s
   clustering open question — see the decision log below for the full
   before/after context.
 
+### Phase 13 — Retire the routed/best-effort loop from Suggest placements — `done`
+
+Spec: [specs/phase-13-honest-suggestions.md](specs/phase-13-honest-suggestions.md).
+
+- Deleted `match/loopSearch.ts` (and its types/tests) and reverted
+  `app/map.ts`/`ui/controls.ts` to Phase 6/12's plain, honest
+  coverage-percentage suggestion list — no length, no gap count, no "closed
+  loop" wording.
+- Motivated entirely by the 2026-09-13 review's evidence, not by any new
+  finding of this phase's own.
+
+### Phase 14 — Corner-anchored, human-adjustable placement — `todo`
+
+Spec: [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md).
+
+- Reduces a circuit to its significant corners (`geometry/corners.ts`,
+  new), resolves each independently against real streets within its own
+  search radius (`match/landmarks.ts`, new, built on the existing
+  `graph.ts`), and lets the user drag any corner to a different real street —
+  recomputing only its two adjacent legs — before committing the result as a
+  normal traced route (`app/state.ts`'s new `setRoute`).
+- Judged against a concrete bar: at least two of the three bundled circuits
+  should come in under 1.2× real length with under 4 gaps at the best
+  candidate placement, *before* manual dragging — a material improvement over
+  Phases 10-12's 1.43-2.24× / 10-29 gaps.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -294,6 +328,75 @@ Spec: [specs/phase-12-anchor-on-real-streets.md](specs/phase-12-anchor-on-real-s
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-13 — Phase 13 shipped: `match/loopSearch.ts` deleted, Suggest
+  placements back to an honest coverage list.** Directly implements the
+  same-day review's remediation plan (previous entry). `src/match/loopSearch.ts`
+  and `loopSearch.test.ts` are deleted outright; `RoutedLoop`, `BestEffortLoop`,
+  `RoutedSuggestion`, `LoopSearchProgress`, `LoopSearchOptions` are gone from
+  `match/types.ts`. `app/suggest.ts` drops `createLoopSuggester`/`LoopSuggester`
+  (`pump`, `createSuggester`, `Suggester` untouched — they were already tested
+  and now cover the app's real path again). `app/map.ts` switches from
+  `createLoopSuggester()` to `createSuggester()`: `onSuggest`'s search call
+  drops the `streetGraph` argument and the `phase: 'search' | 'route'`
+  distinction; `onUseSuggestion` sets only `applyPlacement(state,
+  chosen.placement)`, no longer seeding a route from `chosen.loop?.points ??
+  chosen.bestEffort?.points`; the hovered-suggestion preview drops
+  `previewRouteLine`/`previewGapLine` entirely and falls back to the existing
+  dashed-outline mechanism the saved-placement preview already used pre-Phase-8
+  (`GAP_COLOR`/`routeGapLine` stay — manual tracing's gap rendering is
+  unrelated and unaffected). `ui/controls.ts`'s `SuggestView.suggestions`
+  becomes `readonly Suggestion[]`, `formatSuggestionLabel` drops the
+  `s.loop`/`s.bestEffort` branches back to the single coverage-percentage
+  line, and the running-phase label is unconditionally "Searching
+  placements…" (`SearchProgress` has no `phase` field to branch on). No change
+  to `match/search.ts`, `match/straights.ts`, `match/objective.ts`, `graph.ts`,
+  or any Phase 6/12 constant — this phase only changed what `app/map.ts` calls
+  and what `ui/controls.ts` renders. `grep -r "RoutedSuggestion\|RoutedLoop\|
+  BestEffortLoop\|createLoopSuggester" src/` returns nothing. 253 tests pass
+  (`npm run build` clean); the same two real-data tests noted as
+  load-sensitive in the Phase 10/12 decision log entries (`graph.test.ts`'s
+  connectivity check, several `app/map.test.ts` cases) timed out under this
+  session's full-parallel run and passed cleanly re-run in isolation — the
+  same known resource-profile characteristic, not a regression from this
+  phase's changes. Full spec: `docs/specs/phase-13-honest-suggestions.md`.
+
+- **2026-09-13 — Independent code review: the routed/best-effort loop
+  approach doesn't work, and can't be tuned into working.** Requested
+  explicitly as a code-only review (not a review of process or past
+  decisions). Findings, verified first-hand (re-ran the real-data test in
+  isolation; drove the live app in a headless browser and inspected the
+  rendered result, not just the numbers): **0 of 15 suggestions (5 per
+  circuit × 3 bundled circuits) form a real closed loop, on every run.**
+  Every suggestion falls back to a best-effort loop 1.43-2.24× the circuit's
+  real length, with 17-48% of its 60 samples unresolved and drawn as straight
+  invented segments — visually, a tangled scribble confined to one small
+  neighbourhood, not the source circuit's shape (screenshots in the review).
+  One inspected gap-adjacent leg threaded through a school's internal
+  grounds — nothing in `graph.ts`/`match/loopSearch.ts` distinguishes a
+  public street from a path inside a private/institutional compound. Root
+  cause: `match/search.ts` searches a *rigid* translation+rotation of the
+  circuit's undeformed outline, and `match/loopSearch.ts` then tries to
+  validate or patch a real street loop under that same rigid, undeformed
+  shape — real organic street grids have no reason to contain an undistorted
+  copy of a purpose-built racing circuit, so this only works by luck, and it
+  never has across three different circuit shapes. Phases 7-12's own honest
+  tuning history is itself the evidence this is a diminishing-returns ceiling
+  for the chosen strategy, not a "nearly there" situation: six phases moved
+  the best-case length ratio from ~2.15-3.6× down to 1.43-2.24× while
+  `routedCount` stayed at exactly 0 throughout every single one. What *does*
+  work, confirmed correct and unaffected by this finding: `geometry/*`
+  (transform/straight/turning/procrustes), `graph.ts`'s connectivity repair
+  and A*, `streets.ts`/`app/proximity.ts`'s index and heatmap, and manual
+  tracing (`app/trace.ts`, Phase 5/7) — the one workflow that already keeps
+  both real scale and a recognisable shape, because it keeps the user's
+  judgement in the loop instead of trying to fully automate a search a rigid
+  model can't solve. Full report, evidence, and a two-phase remediation plan
+  (drop the false claim, then replace it with a fundamentally different
+  approach — not more tuning of the same one) in
+  [reviews/2026-09-13-suggested-placements-review.md](reviews/2026-09-13-suggested-placements-review.md);
+  the plan became [specs/phase-13-honest-suggestions.md](specs/phase-13-honest-suggestions.md)
+  and [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md).
 
 - **2026-09-12 — Phase 12 shipped: candidates seeded from real streets, final
   selection spread across the map.** `match/straights.ts` (new):

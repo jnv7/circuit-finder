@@ -319,7 +319,7 @@ describe('renderControls — suggest placements section', () => {
       view({
         suggest: {
           phase: 'running',
-          progress: { done: 3, total: 8, phase: 'search' },
+          progress: { done: 3, total: 8 },
           suggestions: [],
           selectedIndex: null,
         },
@@ -330,29 +330,18 @@ describe('renderControls — suggest placements section', () => {
     expect(html).not.toContain('data-role="suggest"')
   })
 
-  it('running: shows a phase label that switches between search and route', () => {
-    const searching = renderControls(
+  it('running: shows a searching-placements phase label', () => {
+    const html = renderControls(
       view({
         suggest: {
           phase: 'running',
-          progress: { done: 1, total: 8, phase: 'search' },
+          progress: { done: 1, total: 8 },
           suggestions: [],
           selectedIndex: null,
         },
       }),
     )
-    expect(searching).toContain('Searching placements')
-    const routing = renderControls(
-      view({
-        suggest: {
-          phase: 'running',
-          progress: { done: 1, total: 8, phase: 'route' },
-          suggestions: [],
-          selectedIndex: null,
-        },
-      }),
-    )
-    expect(routing).toContain('Checking routes')
+    expect(html).toContain('Searching placements')
   })
 
   it('results: one row per suggestion with the coverage label, use and clear buttons', () => {
@@ -368,37 +357,6 @@ describe('renderControls — suggest placements section', () => {
     expect(html).toContain('data-role="suggest-clear"')
   })
 
-  it('results: renders the right label for a simple loop, a non-simple loop, a best-effort loop, and a fallback row', () => {
-    const suggestions = [
-      sampleSuggestion({
-        loop: { points: [], lengthM: 3400, meanDeviationM: 12, maxDeviationM: 30, simple: true },
-      }),
-      sampleSuggestion({
-        loop: { points: [], lengthM: 3400, meanDeviationM: 12, maxDeviationM: 30, simple: false },
-      }),
-      sampleSuggestion({
-        bestEffort: {
-          legs: [],
-          points: [],
-          lengthM: 3100,
-          meanDeviationM: 14,
-          maxDeviationM: 40,
-          gapLengthM: 180,
-          gapCount: 2,
-        },
-      }),
-      sampleSuggestion(),
-    ]
-    const html = renderControls(
-      view({ suggest: { phase: 'results', suggestions, selectedIndex: null } }),
-    )
-    expect(html).toContain('closed loop')
-    expect(html).toContain('retraces a street')
-    expect(html).toContain('2 street gaps')
-    expect(html).toContain('on streets')
-    expect((html.match(/data-role="suggest-use"/g) ?? []).length).toBe(4)
-  })
-
   it('results: shows an empty note when the search found nothing', () => {
     const html = renderControls(
       view({ suggest: { phase: 'results', suggestions: [], selectedIndex: null } }),
@@ -410,7 +368,7 @@ describe('renderControls — suggest placements section', () => {
 })
 
 describe('formatSuggestionLabel', () => {
-  it('a fallback suggestion (no loop) shows a rounded percentage and average deviation', () => {
+  it('shows a rounded coverage percentage and average deviation', () => {
     expect(
       formatSuggestionLabel({
         placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
@@ -419,70 +377,6 @@ describe('formatSuggestionLabel', () => {
         maxDeviationM: 40,
       }),
     ).toBe('73% on streets · ~19 m avg')
-  })
-
-  it('a simple routed loop shows its real length and deviation, no coverage', () => {
-    const label = formatSuggestionLabel({
-      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
-      coverageFraction: 1,
-      meanDeviationM: 5,
-      maxDeviationM: 10,
-      loop: { points: [], lengthM: 3400, meanDeviationM: 12.4, maxDeviationM: 30, simple: true },
-    })
-    expect(label).toContain('closed loop')
-    expect(label).not.toContain('retraces')
-    expect(label).not.toContain('on streets')
-    expect(label).toContain('~12 m avg')
-  })
-
-  it('a non-simple routed loop is visibly flagged as retracing a street', () => {
-    const label = formatSuggestionLabel({
-      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
-      coverageFraction: 1,
-      meanDeviationM: 5,
-      maxDeviationM: 10,
-      loop: { points: [], lengthM: 3400, meanDeviationM: 12.4, maxDeviationM: 30, simple: false },
-    })
-    expect(label).toContain('retraces a street')
-  })
-
-  it('a best-effort loop reads distance, gap count/length, then deviation, no coverage', () => {
-    const label = formatSuggestionLabel({
-      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
-      coverageFraction: 0.5,
-      meanDeviationM: 5,
-      maxDeviationM: 10,
-      bestEffort: {
-        legs: [],
-        points: [],
-        lengthM: 3100,
-        meanDeviationM: 14,
-        maxDeviationM: 40,
-        gapLengthM: 180,
-        gapCount: 2,
-      },
-    })
-    expect(label).toBe('3.10 km loop · 2 street gaps (180 m) · ~14 m off shape')
-  })
-
-  it('a single street gap reads in the singular', () => {
-    const label = formatSuggestionLabel({
-      placement: { anchor: [0, 0], rotationRad: 0, scale: 1 },
-      coverageFraction: 0.5,
-      meanDeviationM: 5,
-      maxDeviationM: 10,
-      bestEffort: {
-        legs: [],
-        points: [],
-        lengthM: 1000,
-        meanDeviationM: 8,
-        maxDeviationM: 20,
-        gapLengthM: 50,
-        gapCount: 1,
-      },
-    })
-    expect(label).toContain('1 street gap (50 m)')
-    expect(label).not.toContain('gaps')
   })
 })
 
@@ -502,7 +396,7 @@ describe('bind — suggest section', () => {
       view({
         suggest: {
           phase: 'running',
-          progress: { done: 1, total: 2, phase: 'search' },
+          progress: { done: 1, total: 2 },
           suggestions: [],
           selectedIndex: null,
         },

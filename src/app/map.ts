@@ -27,9 +27,9 @@ import {
   setScale,
   undoRoutePoint,
 } from './state'
-import { createLoopSuggester } from './suggest'
-import type { LoopSuggester } from './suggest'
-import type { RoutedSuggestion, SearchInput } from '../match/types'
+import { createSuggester } from './suggest'
+import type { Suggester } from './suggest'
+import type { SearchInput, Suggestion } from '../match/types'
 import type { SuggestView } from '../ui/controls'
 import {
   getPlacement,
@@ -122,15 +122,15 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   let tracing = false
   let studyView = false
 
-  // Phase 6/8 suggested placements: an opt-in search that also tries to route
-  // a real closed loop around each candidate (Phase 8), its results, and the
-  // row currently hovered (drawn as a dashed preview without touching state).
-  let loopSuggester: LoopSuggester = createLoopSuggester()
+  // Phase 6 suggested placements: an opt-in search over candidate spots, its
+  // results, and the row currently hovered (drawn as a dashed preview without
+  // touching state).
+  let suggester: Suggester = createSuggester()
   let suggest: SuggestView = { phase: 'idle', suggestions: [], selectedIndex: null }
-  let previewSuggestion: RoutedSuggestion | null = null
+  let previewSuggestion: Suggestion | null = null
 
   function clearSuggestions(): void {
-    loopSuggester.cancel()
+    suggester.cancel()
     suggest = { phase: 'idle', suggestions: [], selectedIndex: null }
     previewSuggestion = null
   }
@@ -191,24 +191,6 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     interactive: false,
   }).addTo(map)
   const vertexLayer = L.layerGroup().addTo(map)
-
-  // Phase 8: a hovered routed suggestion's real loop, dashed — inert, never
-  // bound to `state.route`, cleared whenever nothing is previewed. Phase 10:
-  // a matching gap-leg layer for a best-effort suggestion's invented legs.
-  const previewRouteLine = L.polyline([], {
-    weight: 4,
-    color: ROUTE_COLOR,
-    dashArray: '5 6',
-    opacity: 0.7,
-    interactive: false,
-  }).addTo(map)
-  const previewGapLine = L.polyline([], {
-    weight: 4,
-    color: GAP_COLOR,
-    dashArray: '6 4',
-    opacity: 0.7,
-    interactive: false,
-  }).addTo(map)
 
   const savedForCurrent = (): SavedPlacement | undefined =>
     getPlacement(placements, state.circuitId)
@@ -296,16 +278,8 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       handle.setLatLng(map.containerPointToLatLng(L.point(hp[0], hp[1])))
     }
 
-    // Phase 8: a hovered routed suggestion's real loop, dashed, independent
-    // of the live route. Phase 10: a best-effort suggestion's legs split into
-    // the same real/gap layers as the traced route below.
-    const previewLegs: RouteLeg[] = previewSuggestion?.loop
-      ? [{ points: previewSuggestion.loop.points, real: true }]
-      : (previewSuggestion?.bestEffort?.legs ?? [])
     const toLegLatLngs = (legs: RouteLeg[]): L.LatLngExpression[][] =>
       legs.map((l) => l.points.map((p) => toLatLng(project.toLonLat(p))))
-    previewRouteLine.setLatLngs(toLegLatLngs(previewLegs.filter((l) => l.real)))
-    previewGapLine.setLatLngs(toLegLatLngs(previewLegs.filter((l) => !l.real)))
 
     // Traced route: drawn as the routed path through the street graph, not
     // the raw clicked waypoints — vertex markers still mark the waypoints.
@@ -362,10 +336,6 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       if (el && suggest.progress) {
         el.value = suggest.progress.done
         el.max = suggest.progress.total
-      }
-      const phaseEl = panelEl.querySelector<HTMLElement>('[data-role="suggest-phase"]')
-      if (phaseEl && suggest.progress) {
-        phaseEl.textContent = suggest.progress.phase === 'route' ? 'Checking routes…' : 'Searching placements…'
       }
     })
   }
@@ -515,36 +485,32 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
             lengthM: circuit.longestStraight.lengthM,
           },
         }
-        loopSuggester.cancel()
-        loopSuggester = createLoopSuggester()
-        const active = loopSuggester
+        suggester.cancel()
+        suggester = createSuggester()
+        const active = suggester
         previewingSaved = false
         previewSuggestion = null
         suggest = {
           phase: 'running',
-          progress: { done: 0, total: 1, phase: 'search' },
+          progress: { done: 0, total: 1 },
           suggestions: [],
           selectedIndex: null,
         }
         renderPanel()
         render()
         void active
-          .run(input, streetGraph, (p) => {
-            if (loopSuggester !== active) return
+          .run(input, (p) => {
+            if (suggester !== active) return
             suggest = { ...suggest, progress: p }
             scheduleSuggestProgress()
           })
           .then((results) => {
-            if (loopSuggester !== active) return
-            // Re-label every *fallback* suggestion with the same coverage/
-            // deviation the live map will show once applied (Phase 6's
-            // "one source of truth for the label" fix); a routed suggestion's
-            // numbers already come from routing this exact pose, so they're
-            // left untouched, and the list's routed-first ranking from the
-            // search is never re-sorted here.
+            if (suggester !== active) return
+            // Re-label every suggestion with the same coverage/deviation the
+            // live map will show once applied (one source of truth for the
+            // label), rather than trusting the search's own snapshot.
             const circuit = circuitById(state.circuitId)
             const suggestions = results.map((s) => {
-              if (s.loop) return s
               const ring = overlayLatLngs(circuit, s.placement).map((cd) => project.toLocal(cd))
               const dev = lapDeviation(ring, streetIndex)
               return {
@@ -576,9 +542,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         ) {
           return
         }
-        const routePoints = chosen.loop?.points ?? chosen.bestEffort?.points ?? []
-        const route = routePoints.map((p) => project.toLonLat(p))
-        state = applyPlacement(state, chosen.placement, route)
+        state = applyPlacement(state, chosen.placement)
         clearSuggestions()
         previewingSaved = false
         map.setView(toLatLng(state.placement.anchor))
@@ -679,7 +643,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
 
   return {
     destroy(): void {
-      loopSuggester.cancel()
+      suggester.cancel()
       if (frame !== null) cancelAnimationFrame(frame)
       if (suggestFrame !== null) cancelAnimationFrame(suggestFrame)
       frame = null
@@ -689,8 +653,6 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       handle.off()
       routeLine.remove()
       routeGapLine.remove()
-      previewRouteLine.remove()
-      previewGapLine.remove()
       vertexLayer.remove()
       map.off()
       map.remove()

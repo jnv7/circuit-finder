@@ -8,6 +8,23 @@ Newest release first.
 
 ---
 
+## 0.11.1 — Suggestions are honest starting spots again, not a claimed route (2026-09-13)
+
+**"Suggest placements" no longer claims to hand you a runnable loop.** A
+review found that the "real closed loop" and "best-effort loop" suggestions
+added over the last few releases never actually delivered a loop worth
+running: every one came back 1.4–2.2× the circuit's real length, with a large
+chunk of it invented straight lines cutting across blocks and buildings —
+technically "connected," but not a route anyone would run. Every suggested
+row is back to exactly what it showed before that work started: a spot's
+coverage on real streets and its average distance from them ("NN% on
+streets · ~NN m avg"), nothing more. Hovering still previews the outline, and
+**Use this** still drops the circuit there — it just no longer pretends to
+also hand you a traced route. Tracing a real route — by hand, following
+streets — is still there and unaffected.
+
+---
+
 ## 0.11.0 — Suggestions spread across the city, not just one corner (2026-09-12)
 
 **"Suggest placements" now looks all over Porto, not just wherever the search

@@ -6,41 +6,14 @@ import { STORAGE_KEY } from './storage'
 import { LEVELS, proximityColor } from './proximity'
 import { createMapApp } from './map'
 
-// Stub the search generator so the suggest tests are fast and deterministic.
-// One routed (Phase 8) suggestion and one fallback (Phase 6-only) suggestion.
-const STUB_LOOP_POINTS: [number, number][] = [
-  [0, 0],
-  [50, 0],
-  [50, 50],
-  [0, 50],
-  [0, 0],
-]
-// One real leg (two points close together, on real streets near the Porto
-// frame origin — same shape as STUB_LOOP_POINTS above) plus two gap legs
-// closing the loop via a point far outside the bundled network entirely, so
-// re-deriving this through the real street graph (as "Use this" does) still
-// finds the real leg real and the far corner unresolvable, not just an
-// artefact of the stub's own (unrendered) `real` flags.
-const FAR_OUTSIDE_NETWORK: [number, number] = [300_000, 300_000]
-const STUB_BEST_EFFORT_LEGS = [
-  { points: [[0, 0], [80, 0]] as [number, number][], real: true },
-  { points: [[80, 0], FAR_OUTSIDE_NETWORK] as [number, number][], real: false },
-  { points: [FAR_OUTSIDE_NETWORK, [0, 0]] as [number, number][], real: false },
-]
-const STUB_BEST_EFFORT_POINTS: [number, number][] = [[0, 0], [80, 0], FAR_OUTSIDE_NETWORK, [0, 0]]
+// Stub the search generator so the suggest tests are fast and deterministic —
+// plain Phase 6 coverage suggestions, no loop/best-effort attached.
 const STUB_SUGGESTIONS = [
   {
     placement: { anchor: [-8.6, 41.165], rotationRad: 0.4, scale: 1 },
     coverageFraction: 1,
     meanDeviationM: 12,
     maxDeviationM: 30,
-    loop: {
-      points: STUB_LOOP_POINTS,
-      lengthM: 200,
-      meanDeviationM: 12,
-      maxDeviationM: 30,
-      simple: true,
-    },
   },
   {
     placement: { anchor: [-8.64, 41.15], rotationRad: -0.3, scale: 1 },
@@ -48,26 +21,11 @@ const STUB_SUGGESTIONS = [
     meanDeviationM: 38,
     maxDeviationM: 90,
   },
-  {
-    placement: { anchor: [-8.62, 41.158], rotationRad: 0.1, scale: 1 },
-    coverageFraction: 0.7,
-    meanDeviationM: 20,
-    maxDeviationM: 45,
-    bestEffort: {
-      legs: STUB_BEST_EFFORT_LEGS,
-      points: STUB_BEST_EFFORT_POINTS,
-      lengthM: 400,
-      meanDeviationM: 14,
-      maxDeviationM: 35,
-      gapLengthM: 90,
-      gapCount: 1,
-    },
-  },
 ]
-vi.mock('../match/loopSearch', () => ({
-  searchRoutedLoops: function* () {
-    yield { done: 1, total: 2, phase: 'search' }
-    yield { done: 2, total: 2, phase: 'route' }
+vi.mock('../match/search', () => ({
+  searchPlacements: function* () {
+    yield { done: 1, total: 2 }
+    yield { done: 2, total: 2 }
     return STUB_SUGGESTIONS
   },
 }))
@@ -279,7 +237,7 @@ describe('createMapApp — saved placements', () => {
     expect(panel(container).querySelector('[data-role="suggest-list"]')).not.toBeNull()
     expect(panel(container).textContent).toMatch(/\d+% on streets · ~\d+ m avg/)
     const rows = panel(container).querySelectorAll('[data-role="suggest-use"]')
-    expect(rows).toHaveLength(3)
+    expect(rows).toHaveLength(2)
 
     ;(rows[0] as HTMLButtonElement).dispatchEvent(new Event('click'))
     await flush()
@@ -335,25 +293,8 @@ describe('createMapApp — saved placements', () => {
   })
 })
 
-describe('createMapApp — routed suggestions (Phase 8)', () => {
-  it('Use this on a routed suggestion moves the overlay and seeds an editable route following the loop', async () => {
-    const container = mount()
-    const app = createMapApp(container, circuits)
-
-    click(container, 'suggest')
-    await flush()
-    const rows = panel(container).querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')
-    rows[0]!.dispatchEvent(new Event('click')) // the routed suggestion
-
-    expect(routePath(container)).toBeDefined()
-    const d = routePath(container)!.getAttribute('d')!
-    expect((d.match(/[LM]/g) ?? []).length).toBeGreaterThan(2)
-
-    app.destroy()
-    container.remove()
-  })
-
-  it('Use this on a fallback suggestion moves the overlay but leaves the route empty', async () => {
+describe('createMapApp — suggestions (Phase 13: plain coverage list)', () => {
+  it('Use this on a suggestion moves the overlay but leaves the route empty', async () => {
     const container = mount()
     const app = createMapApp(container, circuits)
 
@@ -363,7 +304,7 @@ describe('createMapApp — routed suggestions (Phase 8)', () => {
     await flush()
     const before = paths()
     const rows = panel(container).querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')
-    rows[1]!.dispatchEvent(new Event('click')) // the fallback suggestion
+    rows[0]!.dispatchEvent(new Event('click'))
 
     // Leaflet keeps an empty polyline's <path> in the DOM with a placeholder
     // "d" rather than removing it — an empty route reads as that placeholder.
@@ -374,81 +315,36 @@ describe('createMapApp — routed suggestions (Phase 8)', () => {
     container.remove()
   })
 
-  it('hovering a routed suggestion previews its real loop, dashed, clearing on un-hover', async () => {
+  it('hovering a suggestion row previews the outline dashed, clearing on un-hover', async () => {
     const container = mount()
     const app = createMapApp(container, circuits)
 
     click(container, 'suggest')
     await flush()
 
-    const dashedRoutePaths = () =>
-      [...container.querySelectorAll('svg path')].filter(
-        (p) => p.getAttribute('stroke') === '#1565c0' && p.getAttribute('d') && p.getAttribute('d') !== 'M0 0',
-      )
-
     const row = panel(container).querySelector('li[data-suggest-index="0"]')!
     row.dispatchEvent(new Event('mouseenter'))
-    const withPreview = dashedRoutePaths()
-    expect(withPreview.some((p) => p.getAttribute('stroke-dasharray'))).toBe(true)
+    const dashedCentreline = () =>
+      [...container.querySelectorAll('svg path')].filter(
+        (p) => p.getAttribute('stroke-dasharray') && rampColors.has(p.getAttribute('stroke') ?? ''),
+      )
+    expect(dashedCentreline().length).toBeGreaterThan(0)
 
     panel(container)
       .querySelector('[data-role="suggest-list"]')!
       .dispatchEvent(new Event('mouseleave'))
-    const afterLeave = dashedRoutePaths().filter((p) => p.getAttribute('stroke-dasharray'))
-    expect(afterLeave).toHaveLength(0)
+    expect(dashedCentreline()).toHaveLength(0)
 
     app.destroy()
     container.remove()
   })
 })
 
-describe('createMapApp — best-effort suggestions (Phase 10)', () => {
-  // Both the trace and preview gap layers share the same red — a suggestion
-  // is always previewed on top of an idle (empty) trace layer, so checking
-  // that *any* gap-coloured path has real coordinates is enough to tell
-  // "a gap is drawn somewhere" from "no gap is drawn at all".
+describe('createMapApp — manual trace gaps (Phase 10)', () => {
   const anyGapDrawn = (container: HTMLElement) =>
     [...container.querySelectorAll('svg path')].some(
       (p) => p.getAttribute('stroke') === '#c62828' && p.getAttribute('d') !== 'M0 0',
     )
-
-  it("hovering a best-effort suggestion's row previews both its real legs and its gap leg, clearing on un-hover", async () => {
-    const container = mount()
-    const app = createMapApp(container, circuits)
-
-    click(container, 'suggest')
-    await flush()
-
-    expect(anyGapDrawn(container)).toBe(false) // nothing previewed yet
-
-    const row = panel(container).querySelector('li[data-suggest-index="2"]')!
-    row.dispatchEvent(new Event('mouseenter'))
-    expect(anyGapDrawn(container)).toBe(true)
-
-    panel(container)
-      .querySelector('[data-role="suggest-list"]')!
-      .dispatchEvent(new Event('mouseleave'))
-    expect(anyGapDrawn(container)).toBe(false)
-
-    app.destroy()
-    container.remove()
-  })
-
-  it('Use this on a best-effort suggestion seeds an editable route whose drawn line shows the same gap in red', async () => {
-    const container = mount()
-    const app = createMapApp(container, circuits)
-
-    click(container, 'suggest')
-    await flush()
-    const rows = panel(container).querySelectorAll<HTMLButtonElement>('[data-role="suggest-use"]')
-    rows[2]!.dispatchEvent(new Event('click')) // the best-effort suggestion
-
-    expect(routePath(container)).toBeDefined()
-    expect(anyGapDrawn(container)).toBe(true)
-
-    app.destroy()
-    container.remove()
-  })
 
   it('a fully-connected manual trace draws no red gap line at all', () => {
     const container = mount()

@@ -52,9 +52,8 @@ export function routeLengthM(metricRoute: readonly Point[]): number {
  * already resolved for `waypoints[i]` (or `null` if none was), and a leg
  * routes by real shortest path when both its endpoints resolved and the graph
  * connects them, else falls back to a straight line between the two points
- * actually used, flagged `real: false`. Shared by `expandRouteWithGaps`
- * (manual tracing) and `match/loopSearch`'s `buildBestEffortLoop` (routed
- * suggestions) — the two differ only in how generously they resolve nodes.
+ * actually used, flagged `real: false`. Used by `expandRouteWithGaps` for
+ * manual tracing.
  */
 export function joinWaypoints(
   waypoints: readonly Point[],

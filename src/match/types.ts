@@ -1,7 +1,6 @@
 // Shared types for the Phase 6 placement search. See
 // docs/specs/phase-6-suggested-placements.md.
 import type { Placement } from '../app/overlay'
-import type { RouteLeg } from '../app/trace'
 import type { Point } from '../geometry/types'
 import type { Street, StreetIndex } from '../streets'
 
@@ -62,55 +61,3 @@ export type SearchOptions = Partial<{
   wProcrustes: number
   alignMaxRad: number
 }>
-
-/** Phase 8: a real, fully street-connected closed loop built around a
- *  candidate's placed outline. See docs/specs/phase-8-routed-loop-suggestions.md. */
-export type RoutedLoop = {
-  /** The closed loop actually run, Porto-frame metres, first point repeated
-   *  at the end. */
-  points: Point[]
-  lengthM: number
-  meanDeviationM: number
-  maxDeviationM: number
-  /** True iff no underlying street edge was walked by more than one leg —
-   *  a real closed loop, not a there-and-back spur that happens to connect
-   *  end to end. */
-  simple: boolean
-}
-
-/** Phase 10: a loop that always exists — every leg is a real routed street
- *  segment or, where the network doesn't cooperate, a straight "gap" segment,
- *  clearly flagged rather than silently included or the candidate rejected.
- *  See docs/specs/phase-10-best-effort-routed-loops.md. */
-export type BestEffortLoop = {
-  legs: RouteLeg[]
-  /** The closed loop actually run, Porto-frame metres, first point repeated
-   *  at the end. */
-  points: Point[]
-  lengthM: number
-  meanDeviationM: number
-  maxDeviationM: number
-  /** Straight-line length of every gap leg, metres — the ranking key. */
-  gapLengthM: number
-  gapCount: number
-}
-
-/** A Phase 6 `Suggestion` with a routed loop attached, when one was found. */
-export type RoutedSuggestion = Suggestion & {
-  /** A fully-connected loop (Phase 8). Mutually exclusive with `bestEffort`. */
-  loop?: RoutedLoop
-  /** A best-effort loop (Phase 10), present when no fully-routed loop was
-   *  found for this candidate but a real attempt still exists. */
-  bestEffort?: BestEffortLoop
-}
-
-export type LoopSearchProgress = SearchProgress & { phase: 'search' | 'route' }
-
-export type LoopSearchOptions = SearchOptions &
-  Partial<{
-    loopCandidatePool: number
-    loopResultCount: number
-    loopSamples: number
-    loopSnapMaxM: number
-    maxLengthRatio: number
-  }>
