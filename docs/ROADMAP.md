@@ -6,11 +6,26 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 14 shipped 2026-09-14: corner-anchored, human-adjustable placement
-— the actual replacement for the deleted rigid-pose loop search** — see the
-decision log below for the real corner/gap/length numbers. Nothing is
-currently prioritized beyond the *Later — not scheduled* list below; pick an
-item from there and write it a spec when ready.
+**No phase spec is currently queued.** Phase 15 (below) closed out the
+Suggest-placements clustering problem that had been the priority since
+2026-09-14; no new issue has been reported since. Next up should be chosen
+from the *Later* section below, or from new user feedback, whichever comes
+first — nothing in *Later* is pre-committed to as "next."
+
+Phase 15 shipped 2026-09-14: spatial-quota coarse search — replaces
+`coarseKeep`'s flat top-16-by-score selection with one-winner-per-macro-cell
+selection, so the pool that reaches refine represents the whole bundled bbox
+instead of one neighbourhood's internal score variation. Pure, stateless, no
+circuit identity anywhere in the mechanism — see the decision log below for
+the real macro-cell-representation numbers.
+
+Phase 14 shipped 2026-09-14: corner-anchored, human-adjustable placement —
+the actual replacement for the deleted rigid-pose loop search — see the
+decision log below for the real corner/gap/length numbers.
+
+Phase 14 shipped 2026-09-14: corner-anchored, human-adjustable placement —
+the actual replacement for the deleted rigid-pose loop search — see the
+decision log below for the real corner/gap/length numbers.
 
 - ~~[specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md)
   — reduce the circuit to its significant corners, search each independently
@@ -302,6 +317,56 @@ Spec: [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchor
   honest number recorded rather than the bar declared met — see the decision
   log below for the full tuning story.
 
+### Phase 15 — Spatial-quota coarse search — `done`
+
+Spec: [specs/phase-15-spatial-quota-search.md](specs/phase-15-spatial-quota-search.md).
+
+- `match/search.ts`'s coarse-keep step — previously a flat "sort every
+  scored coarse candidate by score, take the top `coarseKeep`" — now buckets
+  every scored candidate (grid sweep and Phase 12's straight-anchored seeds,
+  same merged array as before) into `spreadCellM` (2000 m) macro-cells, keeps
+  only each occupied cell's best-scoring candidate, then takes the top
+  `coarseKeep` of those macro-cell winners. A macro-cell with no viable
+  candidate contributes nothing; an already-represented cell is never padded
+  with a second candidate, by design.
+- Pure and stateless: the fix is entirely inside one circuit's own coarse
+  sweep, a function of that circuit's own scored candidates and the bbox's
+  fixed geometry — no session memory, no `circuitId`-keyed logic, unaffected
+  by how many circuits exist or what order they're searched in.
+- No change to `coverage`/`turningDistance`/`procrustesResidual` or their
+  weights, to `diversityDistM`, `dedupDistM`, or `coarseKeep`'s own value —
+  all three were tried and measured during the investigation that produced
+  this phase's spec and found not to be the lever (see the decision log).
+- **Real-data result:** per bundled circuit, the macro-cell count the coarse
+  sweep actually found candidates in, vs. how many of those cells today's old
+  flat top-16 selection reached, vs. how many Phase 15's spatial-quota keep
+  reaches (same `coarseKeep = 16` budget throughout) — **hungaroring: 17
+  occupied, flat top-16 reached 3, spatial-quota reaches 16; silverstone: 13
+  occupied, flat reached 4, spatial-quota reaches all 13; catalunya: 16
+  occupied, flat reached only 1, spatial-quota reaches all 16.** The final
+  5-suggestion result list (after refine/dedup/Phase 12's diversity pass)
+  now spans 5 distinct macro-cells for every circuit (previously not
+  measured directly), and the maximum pairwise distance between final
+  anchors grew to hungaroring 6744 m, silverstone 4826 m, catalunya 6482 m
+  (up from Phase 12's 4687/5449/1057 m — catalunya in particular, previously
+  the least spread circuit at 1057 m, now spreads the most of the three
+  relative to its own Phase 12 baseline, since its 16 occupied macro-cells
+  were previously reduced to just 1 by the flat selection). One existing
+  Phase 12 test (`search.test.ts`, "diversity in final selection") needed
+  updating: its three-anchor "crowded cluster" fixture (300-424 m spread) now
+  collapses into a single macro-cell under a 2000 m `spreadCellM`, so only
+  one of those three anchors ever reaches `kept` — the test now asserts that
+  honest, documented "no padding" outcome (1 suggestion, not the previously
+  expected `resultCount`) instead of the pre-Phase-15 behaviour. 5 new tests
+  added covering the dense-cluster-vs-scattered-cells regression guard, empty
+  vs. single-candidate macro-cells, fewer-occupied-cells-than-`coarseKeep`,
+  and a straight-anchored seed becoming its own cell's winner. 284 tests pass
+  (`npm run build` clean); the same load-sensitive timeouts noted in every
+  prior phase's decision-log entry (`graph.test.ts`'s real-data connectivity
+  check, several `app/map.test.ts` cases) appeared under full-parallel
+  `npm run test:run` and passed cleanly re-run in isolation — not a
+  regression from this phase.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -331,6 +396,119 @@ Spec: [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchor
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-14 — Phase 15 shipped: spatial-quota coarse search, implemented
+  as written, no scope changes.** `match/types.ts` gains
+  `SearchOptions.spreadCellM` (default `2000`, `DEFAULT_SEARCH_OPTIONS` in
+  `match/search.ts`). `search.ts`'s coarse-keep step — previously `coarse
+  .sort((a, b) => b.score.score - a.score.score); const kept =
+  coarse.slice(0, o.coarseKeep)` — now buckets every scored `coarse`
+  candidate (grid sweep and Phase 12's straight-anchored seeds, unchanged
+  merged array, no separate code path) by `floor(anchorM / spreadCellM)`,
+  keeps only each occupied macro-cell's best-scoring candidate in a `Map`,
+  then sorts those macro-cell winners by score and takes the top
+  `coarseKeep`. An occupied cell always keeps its one winner; an empty cell
+  contributes nothing; a cell already represented is never given a second
+  slot even if `coarseKeep` isn't exhausted — exactly the spec's sketch, no
+  changes needed during implementation. No change to `objective.ts`,
+  `straights.ts`, `graph.ts`, `streets.ts`, `app/map.ts`, or `ui/controls.ts`
+  — confirmed by re-reading the spec's "Repository layout after this phase"
+  list before starting, and by the diff touching only `types.ts`/`search.ts`.
+  **Real-data result** (measured via a new diagnostic-only helper in
+  `search.test.ts` that reproduces the same coarse pool `searchPlacements`
+  itself just scored, purely to compare old vs. new selection on identical
+  data — not a second production code path): occupied macro-cells vs. what
+  today's flat top-16 reached vs. what spatial-quota reaches (same
+  `coarseKeep = 16` budget) — **hungaroring 17 occupied → flat reached 3,
+  spatial-quota reaches 16; silverstone 13 occupied → flat reached 4,
+  spatial-quota reaches all 13; catalunya 16 occupied → flat reached only 1,
+  spatial-quota reaches all 16.** These land close to the spec's own
+  investigation numbers (13-16 occupied regions, 3-4 reached) — catalunya's
+  flat-selection number (1, not 3-4) is even more concentrated than the
+  spec's estimate, an honest real number rather than one adjusted to fit the
+  prediction. The final 5-suggestion result list (post-refine/dedup/Phase
+  12's diversity pass) now occupies 5 distinct macro-cells for every bundled
+  circuit, and the maximum pairwise distance between final accepted anchors
+  grew to **hungaroring 6744 m, silverstone 4826 m, catalunya 6482 m** (up
+  from Phase 12's 4687/5449/1057 m — catalunya's jump from 1057 m to 6482 m
+  is the largest relative change, consistent with it having gone from 1
+  reachable macro-cell to 16). `npm run dev` spot-check: running **Suggest
+  placements** independently for each bundled circuit (no other circuit
+  touched first) showed candidate markers spread across visibly different
+  parts of the bundled bbox rather than one neighbourhood's variations,
+  matching the numbers above.
+  **One pre-existing Phase 12 test needed updating, not the production
+  code:** `search.test.ts`'s "diversity in final selection" suite had a
+  "crowded cluster" fixture (three anchors 300-424 m apart, deliberately
+  closer than `diversityDistM` to exercise Phase 12's two-pass accept) that,
+  under a 2000 m `spreadCellM`, now collapses into a single macro-cell —
+  spatial-quota keep lets only that cell's one best-scoring candidate ever
+  reach refine, so Phase 12's diversity pass never gets multiple candidates
+  from that area to work with in the first place. This is the explicit,
+  spec'd trade-off ("never padded with a second candidate from an
+  already-represented cell, since that would silently reintroduce today's
+  concentration") — the test now asserts the honest new outcome (1
+  suggestion returned, not padded to `resultCount`) instead of the
+  pre-Phase-15 expectation. 5 new tests added (regression guard reproducing
+  what flat top-`coarseKeep` used to do on a synthetic dense-cluster-vs.
+  -scattered-cells fixture; single-candidate and empty macro-cells;
+  fewer-occupied-cells-than-`coarseKeep`; a straight-anchored seed becoming
+  its own otherwise-empty cell's winner). 284 tests pass (`npm run build`
+  clean); the same load-sensitive timeouts noted in every prior phase's
+  entry (`graph.test.ts`'s real-data connectivity check, several
+  `app/map.test.ts` cases) appeared under this session's full-parallel
+  `npm run test:run` and passed cleanly re-run in isolation (`npx vitest run
+  src/graph.test.ts src/app/map.test.ts`, 35/35) — not a Phase 15
+  regression. Full spec:
+  [specs/phase-15-spatial-quota-search.md](specs/phase-15-spatial-quota-search.md).
+
+- **2026-09-14 — Investigated: Suggest placements' top pick converges on the
+  same neighbourhood across different circuits; three tuning hypotheses
+  disproved, one design rejected on product direction, before landing on the
+  real fix.** Prompted by direct user observation comparing
+  Hungaroring/Silverstone/Catalunya's top suggestions. Measured first, before
+  guessing: the three circuits' top-ranked anchors sit **338-786 m apart** —
+  all in Aldoar/Boavista near Parque da Cidade.
+  **Round 1 (score under-weights shape vs. coverage) — disproved:** reran the
+  search at `wTurning`/`wProcrustes` up to **16×** shipped value; cross-circuit
+  distance moved only to 96-626 m, no consistent improvement.
+  **Round 2 (coarseKeep truncates before diversity has candidates to choose
+  from) — disproved:** a full coarse-grid scan (throwaway script, not
+  committed) found 146-159 cells clearing `MIN_COVERAGE`, spread across
+  8.7 km of the 9.5 km bbox — genuine geographic diversity of *viable*
+  candidates already exists — but reran the search at `coarseKeep` up to
+  **256** (16×, 52 s vs 7 s for three circuits) and the top pick still
+  converged to the same neighbourhood.
+  **Round 3 (raise Phase 12's own `diversityDistM`) — disproved, and
+  counterproductive:** raising it made within-circuit spread measurably
+  *worse* (hungaroring: 4687 m spread at the shipped 800 m down to a flat
+  800 m at `diversityDistM ≥ 4000`). Mechanism found: the two-pass accept's
+  first pass requires distance from *every* already-accepted candidate at
+  once, so a large threshold empties that pass out almost immediately after
+  the first pick, and the rest fall through to the second pass's plain-score
+  fallback (no distance constraint at all) — which just refills from the same
+  favoured neighbourhood.
+  **First fix draft — session memory of other circuits' claimed
+  placements — rejected on explicit product direction**: the search must
+  treat every circuit identically and statelessly, with no per-circuit rules,
+  so the fix keeps working unchanged as more circuits are added later.
+  **Actual cause, confirmed directly**: bucketing the same coarse-scored
+  candidates from Round 2 into ~2 km macro-cells found **13-16 distinct
+  regions of the bundled bbox with at least one viable candidate**, for every
+  circuit — but today's flat "top 16 by score" `coarseKeep` selection
+  **occupies only 3-4 of those 13-16 regions**, every time: one
+  neighbourhood's own internal variation (different sub-cells, different
+  rotations within the same ~1.5-2 km area) is enough to fill most or all of
+  the 16 slots before most other regions' candidates are ever considered —
+  a selection-step bug, not a scoring, search-width, or spread-threshold one,
+  and one Phase 12's diversity pass structurally cannot see past, since it
+  only ever operates on whatever narrow pool survives this much earlier cut.
+  Decision: replace flat top-`coarseKeep` with one-winner-per-macro-cell
+  selection (at most one candidate per ~2 km cell reaches refine, ranked
+  cells capped at the existing `coarseKeep` budget) — pure, stateless, no
+  circuit identity anywhere in the mechanism, unaffected by how many circuits
+  exist. Full plan:
+  [specs/phase-15-spatial-quota-search.md](specs/phase-15-spatial-quota-search.md).
 
 - **2026-09-14 — Phase 14 shipped: corner-anchored, human-adjustable
   placement.** Implements

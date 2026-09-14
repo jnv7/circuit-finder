@@ -8,6 +8,31 @@ Newest release first.
 
 ---
 
+## 0.12.1 — Suggestions spread across Porto, not just one neighbourhood (2026-09-14)
+
+**"Suggest placements" no longer favours the same part of town for every
+circuit.** A comparison across circuits found the top suggested spot always
+landing in the same small area (around Aldoar/Boavista), regardless of which
+circuit's shape was being searched — even though plenty of other genuinely
+good spots existed elsewhere in the bundled map, they were never making it
+into the search's short list in the first place. The search now guarantees
+it considers at least one candidate from every ~2 km area of the bundled map
+that has a viable spot at all, before narrowing down to the final list —
+instead of letting one area's own internal variation (slightly different
+positions and angles, all nearby each other) crowd out the rest.
+
+**What changes for you:** on the three bundled circuits, the suggested spots
+now spread noticeably further across Porto — the farthest two of the five
+suggestions are now roughly 4.8–6.7 km apart, versus 1.1–5.4 km before. A
+circuit whose genuinely best fit is in one particular area can still show
+that as its top pick — this only widens the pool of spots the search
+actually looks at before choosing, it doesn't hide the best-scoring one.
+
+Nothing else changes: same progress bar, hover preview, and **Use this**
+behaviour as always.
+
+---
+
 ## 0.12.0 — Find corner anchors: a skeleton you can drag into shape (2026-09-14)
 
 **A new way to build a route: let the tool place the circuit's corners, then

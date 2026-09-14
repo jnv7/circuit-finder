@@ -60,6 +60,10 @@ export type SearchOptions = Partial<{
   /** Phase 12: minimum separation (metres) between accepted suggestions
    *  before falling back to plain score order to fill remaining slots. */
   diversityDistM: number
+  /** Phase 15: macro-cell size (metres) for spatial-quota coarse-keep — at
+   *  least one candidate per occupied macro-cell survives to refine, up to
+   *  `coarseKeep`, instead of a flat top-N by score. */
+  spreadCellM: number
   searchMaxM: number
   wTurning: number
   wProcrustes: number

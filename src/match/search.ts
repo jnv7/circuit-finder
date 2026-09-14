@@ -29,6 +29,7 @@ export const DEFAULT_SEARCH_OPTIONS = {
   dedupDistM: 200,
   dedupRotDeg: 12,
   diversityDistM: 800,
+  spreadCellM: 2000,
   alignMaxRad: ALIGN_MAX_RAD,
 } as const
 
@@ -112,8 +113,24 @@ export function* searchPlacements(
     yield { done, total }
   }
 
-  coarse.sort((a, b) => b.score.score - a.score.score)
-  const kept = coarse.slice(0, o.coarseKeep)
+  // --- Spatial-quota keep ---------------------------------------------------
+  // Replaces flat "sort by score, slice(0, coarseKeep)": bucket into
+  // spreadCellM macro-cells, keep each occupied cell's best-scoring candidate,
+  // then take the top coarseKeep of those winners by score. Guarantees the
+  // pool reaching refine represents every macro-region of the bbox that has
+  // *any* viable candidate, instead of letting one region's internal variation
+  // fill the whole budget.
+  const macroWinners = new Map<string, Scored>()
+  for (const c of coarse) {
+    const mx = Math.floor(c.candidate.anchorM[0] / o.spreadCellM)
+    const my = Math.floor(c.candidate.anchorM[1] / o.spreadCellM)
+    const key = `${mx},${my}`
+    const existing = macroWinners.get(key)
+    if (!existing || c.score.score > existing.score.score) macroWinners.set(key, c)
+  }
+  const kept = [...macroWinners.values()]
+    .sort((a, b) => b.score.score - a.score.score)
+    .slice(0, o.coarseKeep)
 
   // --- Local refine ------------------------------------------------------
   const dxs = range(-o.refineSpanM, o.refineSpanM, o.refineStepM)

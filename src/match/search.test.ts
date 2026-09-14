@@ -7,9 +7,47 @@ import type { Point } from '../geometry/types'
 import { portoProjection } from '../porto'
 import { buildStreetIndex, loadStreetNetwork } from '../streets'
 import type { Street } from '../streets'
+import { scoreCandidate } from './objective'
 import { DEFAULT_SEARCH_OPTIONS, searchPlacements } from './search'
-import { findMatchingStreetStraights } from './straights'
+import { findMatchingStreetStraights, seedFromStraight } from './straights'
 import type { SearchInput, SearchProgress, Suggestion } from './types'
+
+/** Reproduces `searchPlacements`' coarse-sweep + seed pool, outside the
+ *  generator, purely to measure macro-cell representation before/after
+ *  Phase 15's spatial-quota keep for the ROADMAP decision log — not
+ *  production code, and not a separate selection path the app ever runs. */
+function coarsePoolForDiagnostics(input: SearchInput): { anchorM: Point; score: number }[] {
+  const o = DEFAULT_SEARCH_OPTIONS
+  const scoreOpts = { alignMaxRad: o.alignMaxRad, minCoverage: o.minCoverage }
+  const { min, max } = input.bbox
+  const pool: { anchorM: Point; score: number }[] = []
+
+  const matchingStraights = findMatchingStreetStraights(
+    input.ways,
+    input.circuitStraight.lengthM * input.scale,
+  )
+  for (const streetStraight of matchingStraights) {
+    for (const candidate of seedFromStraight(input.circuitStraight, streetStraight)) {
+      const score = scoreCandidate(input, candidate, o.samplesCoarse, scoreOpts)
+      if (score.coverage >= o.minCoverage) pool.push({ anchorM: candidate.anchorM, score: score.score })
+    }
+  }
+
+  for (let x = min[0]; x <= max[0] + 1e-9; x += o.coarseGridM) {
+    for (let y = min[1]; y <= max[1] + 1e-9; y += o.coarseGridM) {
+      for (let d = 0; d < 360 - o.coarseRotDeg + 1e-9; d += o.coarseRotDeg) {
+        const candidate = { anchorM: [x, y] as Point, rotationRad: (d * Math.PI) / 180 }
+        const score = scoreCandidate(input, candidate, o.samplesCoarse, scoreOpts)
+        if (score.coverage >= o.minCoverage) pool.push({ anchorM: candidate.anchorM, score: score.score })
+      }
+    }
+  }
+  return pool
+}
+
+function macroCellKey(anchorM: Point, spreadCellM: number): string {
+  return `${Math.floor(anchorM[0] / spreadCellM)},${Math.floor(anchorM[1] / spreadCellM)}`
+}
 
 function drain(gen: Generator<SearchProgress, Suggestion[]>): {
   progress: SearchProgress[]
@@ -222,7 +260,18 @@ describe('searchPlacements — diversity in final selection', () => {
     expect(nearFar).toBe(true)
   })
 
-  it('still returns resultCount suggestions when only the crowded cluster is plausible', () => {
+  // Phase 15: this cluster's own spread (300-424 m) is far smaller than
+  // `spreadCellM` (2000 m), so all three anchors now fall in the *same*
+  // macro-cell — spatial-quota coarse-keep lets only that cell's single
+  // best-scoring winner reach refine at all, before Phase 12's diversity
+  // pass (which operates on whatever survives that much earlier cut) ever
+  // gets multiple candidates to work with. This is the explicit, documented
+  // trade-off of "no padding from an already-represented cell" (spec
+  // phase-15-spatial-quota-search.md): a circuit whose only viable area
+  // fits inside one macro-cell now honestly returns fewer than
+  // `resultCount` suggestions, rather than padding the list with
+  // near-duplicates plucked from the same small neighbourhood.
+  it('returns fewer than resultCount, not padded with near-duplicates, when the only viable area fits in one macro-cell', () => {
     const input: SearchInput = {
       circuitSamplesM,
       scale: 1,
@@ -231,7 +280,166 @@ describe('searchPlacements — diversity in final selection', () => {
       ...noSeed,
     }
     const { suggestions } = drain(searchPlacements(input, { resultCount: 2 }))
-    expect(suggestions).toHaveLength(2)
+    expect(suggestions).toHaveLength(1)
+    expect(clusterAnchors.some((c) => isNear(suggestions[0]!, c, 300))).toBe(true)
+  })
+})
+
+// --- Phase 15: spatial-quota coarse-keep. A dense cluster of high-scoring
+// candidates in one macro-cell, plus several lower-but-viable candidates each
+// alone in its own, separate macro-cell — today's flat top-coarseKeep would
+// fill entirely from the dense cluster; spatial-quota keeps at most one
+// candidate per macro-cell. ---
+describe('searchPlacements — spatial-quota coarse-keep', () => {
+  const SPREAD_CELL_M = 2000
+  // Anchors are multiples of `coarseGridM` (300) so the grid sweep — which
+  // steps from the bbox's own min (also a multiple of 300) — actually lands
+  // exactly on them; off-grid anchors would score 0 everywhere and make
+  // these assertions pass vacuously on empty candidate pools.
+  // Dense cluster: several near-duplicate high-scoring anchors, all inside
+  // macro-cell (0, 0) under a 2000 m cell size.
+  const denseAnchors: Point[] = [
+    [300, 300],
+    [600, 300],
+    [900, 600],
+    [300, 900],
+  ]
+  // Separate, lower-scoring (smaller, partial-coverage) candidates, each
+  // alone in its own distant macro-cell.
+  const scatteredAnchors: Point[] = [
+    [2400, 300], // macro-cell (1, 0)
+    [300, 2400], // macro-cell (0, 1)
+    [4500, 4500], // macro-cell (2, 2)
+    [-2400, 300], // macro-cell (-2, 0) — floor(-2400/2000) = -2
+  ]
+
+  function outlineAt(anchor: Point): Street {
+    const outline = transformPath({ translate: anchor, rotation: 0, scale: 1 }, shape)
+    return [...outline, outline[0]!]
+  }
+
+  const denseStreets = denseAnchors.map(outlineAt)
+  const scatteredStreets = scatteredAnchors.map(outlineAt)
+  const bbox = { min: [-3000, -3000] as Point, max: [5000, 5000] as Point }
+  const noSeed = { ways: [] as Street[], circuitStraight }
+
+  it('regression guard: flat top-coarseKeep alone would fill entirely from the dense cluster', () => {
+    // Reproduces the pre-Phase-15 selection directly: sort by score, slice.
+    const input: SearchInput = {
+      circuitSamplesM,
+      scale: 1,
+      index: buildStreetIndex([...denseStreets, ...scatteredStreets], 50),
+      bbox,
+      ...noSeed,
+    }
+    const o = { ...DEFAULT_SEARCH_OPTIONS, coarseKeep: 4 }
+    const scoreOpts = { alignMaxRad: o.alignMaxRad, minCoverage: o.minCoverage }
+    const xs: number[] = []
+    for (let v = bbox.min[0]; v <= bbox.max[0]; v += o.coarseGridM) xs.push(v)
+    const ys: number[] = []
+    for (let v = bbox.min[1]; v <= bbox.max[1]; v += o.coarseGridM) ys.push(v)
+    const rots: number[] = []
+    for (let d = 0; d < 360; d += o.coarseRotDeg) rots.push((d * Math.PI) / 180)
+
+    const coarse: { candidate: { anchorM: Point; rotationRad: number }; score: { score: number } }[] =
+      []
+    for (const x of xs) {
+      for (const y of ys) {
+        for (const rotationRad of rots) {
+          const candidate = { anchorM: [x, y] as Point, rotationRad }
+          const score = scoreCandidate(input, candidate, o.samplesCoarse, scoreOpts)
+          if (score.coverage >= o.minCoverage) coarse.push({ candidate, score })
+        }
+      }
+    }
+    coarse.sort((a, b) => b.score.score - a.score.score)
+    const flatKept = coarse.slice(0, o.coarseKeep)
+
+    const cellsOccupied = new Set(
+      flatKept.map(
+        (k) =>
+          `${Math.floor(k.candidate.anchorM[0] / SPREAD_CELL_M)},${Math.floor(k.candidate.anchorM[1] / SPREAD_CELL_M)}`,
+      ),
+    )
+    expect(cellsOccupied.size).toBe(1)
+  })
+
+  it('spatial-quota keeps at most one candidate per macro-cell and includes the separate cells', () => {
+    const input: SearchInput = {
+      circuitSamplesM,
+      scale: 1,
+      index: buildStreetIndex([...denseStreets, ...scatteredStreets], 50),
+      bbox,
+      ...noSeed,
+    }
+    const { suggestions } = drain(searchPlacements(input, { coarseKeep: 4, resultCount: 4 }))
+
+    const cellsOccupied = new Set(
+      suggestions.map((s) => {
+        const a = project.toLocal(s.placement.anchor)
+        return `${Math.floor(a[0] / SPREAD_CELL_M)},${Math.floor(a[1] / SPREAD_CELL_M)}`
+      }),
+    )
+    expect(cellsOccupied.size).toBeGreaterThan(1)
+  })
+
+  it('a macro-cell with only one viable candidate contributes exactly that one; an empty macro-cell contributes nothing', () => {
+    const input: SearchInput = {
+      circuitSamplesM,
+      scale: 1,
+      index: buildStreetIndex(scatteredStreets, 50),
+      bbox,
+      ...noSeed,
+    }
+    const { suggestions } = drain(searchPlacements(input, { resultCount: scatteredAnchors.length }))
+    const cellsOccupied = new Set(
+      suggestions.map((s) => {
+        const a = project.toLocal(s.placement.anchor)
+        return `${Math.floor(a[0] / SPREAD_CELL_M)},${Math.floor(a[1] / SPREAD_CELL_M)}`
+      }),
+    )
+    expect(cellsOccupied.size).toBe(suggestions.length)
+  })
+
+  it('fewer occupied macro-cells than coarseKeep: every occupied cell is kept, no duplicate padding', () => {
+    const input: SearchInput = {
+      circuitSamplesM,
+      scale: 1,
+      index: buildStreetIndex(scatteredStreets, 50),
+      bbox,
+      ...noSeed,
+    }
+    const { suggestions } = drain(searchPlacements(input, { coarseKeep: 16, resultCount: 16 }))
+    // Only 4 distinct macro-cells exist in this fixture.
+    const cellsOccupied = new Set(
+      suggestions.map((s) => {
+        const a = project.toLocal(s.placement.anchor)
+        return `${Math.floor(a[0] / SPREAD_CELL_M)},${Math.floor(a[1] / SPREAD_CELL_M)}`
+      }),
+    )
+    expect(suggestions.length).toBeLessThanOrEqual(scatteredAnchors.length)
+    expect(cellsOccupied.size).toBe(suggestions.length)
+  })
+
+  it('a straight-anchored seed in an otherwise-unrepresented macro-cell can become that cell winner', () => {
+    // The needle fixture (from the straight-anchored seeding tests above):
+    // no grid-sweep candidate is remotely competitive there without a seed,
+    // so if the far macro-cell shows up at all, the seed alone put it there.
+    const input: SearchInput = {
+      circuitSamplesM: needleSamplesM,
+      scale: 1,
+      index: buildStreetIndex([offGridStreet], 50),
+      bbox: needleBbox,
+      ways: [offGridStreet],
+      circuitStraight: needleCircuitStraight,
+    }
+    const { suggestions } = drain(searchPlacements(input))
+    const seedCell = `${Math.floor(OFF_GRID_ANCHOR[0] / SPREAD_CELL_M)},${Math.floor(OFF_GRID_ANCHOR[1] / SPREAD_CELL_M)}`
+    const cellsOccupied = suggestions.map((s) => {
+      const a = project.toLocal(s.placement.anchor)
+      return `${Math.floor(a[0] / SPREAD_CELL_M)},${Math.floor(a[1] / SPREAD_CELL_M)}`
+    })
+    expect(cellsOccupied).toContain(seedCell)
   })
 })
 
@@ -279,12 +487,44 @@ describe('searchPlacements — real Porto data', () => {
             if (d > maxPairwiseM) maxPairwiseM = d
           }
         }
+        // Phase 15: how many distinct macro-cells the final result list
+        // occupies, and the top pick's own macro-cell — direct before/after
+        // comparison against this phase's own investigation baseline (today:
+        // 3-4 of 13-16 regions ever reached `kept` at all).
+        const macroCellOf = (s: Suggestion) => macroCellKey(project.toLocal(s.placement.anchor), DEFAULT_SEARCH_OPTIONS.spreadCellM)
+        const macroCells = new Set(suggestions.map(macroCellOf))
+        const topCell = suggestions.length > 0 ? macroCellOf(suggestions[0]!) : 'n/a'
+
+        // Before/after for `kept` itself (the pool this phase actually
+        // changes): reproduce the same coarse pool this search just scored,
+        // and compare today's flat top-coarseKeep against Phase 15's
+        // spatial-quota keep, both capped at the same coarseKeep budget.
+        const pool = coarsePoolForDiagnostics(input)
+        const occupiedRegions = new Set(pool.map((c) => macroCellKey(c.anchorM, DEFAULT_SEARCH_OPTIONS.spreadCellM)))
+        const flatTopKept = [...pool]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, DEFAULT_SEARCH_OPTIONS.coarseKeep)
+        const flatTopKeptCells = new Set(flatTopKept.map((c) => macroCellKey(c.anchorM, DEFAULT_SEARCH_OPTIONS.spreadCellM)))
+        const macroWinners = new Map<string, { anchorM: Point; score: number }>()
+        for (const c of pool) {
+          const key = macroCellKey(c.anchorM, DEFAULT_SEARCH_OPTIONS.spreadCellM)
+          const existing = macroWinners.get(key)
+          if (!existing || c.score > existing.score) macroWinners.set(key, c)
+        }
+        const spatialQuotaKeptCells = [...macroWinners.values()]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, DEFAULT_SEARCH_OPTIONS.coarseKeep)
+
         // Reported in the ROADMAP decision-log entry: before/after spread
         // comparison for the 2026-09-11 clustering open question.
         console.log(
           `searchPlacements (real data, ${circuit.id}): ${elapsedMs.toFixed(0)} ms, ` +
             `${straightMatches.length} matching street straights, ` +
-            `max pairwise anchor distance ${Math.round(maxPairwiseM)} m`,
+            `max pairwise anchor distance ${Math.round(maxPairwiseM)} m, ` +
+            `${macroCells.size} distinct macro-cells in final result, top pick's macro-cell ${topCell}; ` +
+            `kept-pool macro-cells: ${occupiedRegions.size} occupied regions total, ` +
+            `flat top-${DEFAULT_SEARCH_OPTIONS.coarseKeep} (old) reached ${flatTopKeptCells.size}, ` +
+            `spatial-quota (new) reaches ${spatialQuotaKeptCells.length}`,
         )
 
         expect(suggestions.length).toBeGreaterThanOrEqual(1)
