@@ -8,9 +8,13 @@ export type LongestStraightOptions = {
   closed?: boolean
 }
 
-type Seg = { from: number; to: number; dir: Point; len: number }
+export type Seg = { from: number; to: number; dir: Point; len: number }
 
-function buildSegments(path: Path, closed: boolean): Seg[] {
+/** Consecutive segment directions of a path, wrapping across the seam when
+ *  `closed` — shared with `geometry/corners.ts`'s corner extraction, which is
+ *  the natural generalisation of "find the longest near-straight run" to
+ *  "find every joint that isn't part of one". */
+export function buildSegments(path: Path, closed: boolean): Seg[] {
   const n = path.length
   const last = closed ? n : n - 1
   const segs: Seg[] = []
@@ -28,7 +32,7 @@ function buildSegments(path: Path, closed: boolean): Seg[] {
 }
 
 /** Unsigned turn angle between two unit direction vectors, in [0, π]. */
-function turn(a: Point, b: Point): number {
+export function turn(a: Point, b: Point): number {
   const d = a[0] * b[0] + a[1] * b[1]
   return Math.acos(Math.min(1, Math.max(-1, d)))
 }

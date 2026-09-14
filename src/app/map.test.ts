@@ -360,3 +360,79 @@ describe('createMapApp — manual trace gaps (Phase 10)', () => {
     container.remove()
   })
 })
+
+describe('createMapApp — corner skeleton (Phase 14)', () => {
+  it('Find corner anchors draws draggable markers and an honest summary', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    expect(panel(container).querySelector('[data-role="skeleton-build"]')).not.toBeNull()
+    click(container, 'skeleton-build')
+
+    expect(container.querySelectorAll('.skeleton-marker').length).toBeGreaterThan(0)
+    expect(panel(container).textContent).toMatch(/\d+ corners? · .+ · \d+ gaps?/)
+    expect(panel(container).querySelector('[data-role="skeleton-commit"]')).not.toBeNull()
+    expect(panel(container).querySelector('[data-role="skeleton-dismiss"]')).not.toBeNull()
+    expect(panel(container).querySelector('[data-role="skeleton-build"]')).toBeNull()
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('Use as route commits the skeleton as the traced route and clears it', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'skeleton-build')
+    click(container, 'skeleton-commit')
+
+    // Back to idle, markers gone, and the committed route now measures.
+    expect(panel(container).querySelector('[data-role="skeleton-build"]')).not.toBeNull()
+    expect(container.querySelectorAll('.skeleton-marker')).toHaveLength(0)
+    expect(panel(container).textContent).toMatch(/Route length/)
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('Dismiss clears the skeleton without touching an existing route', () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'trace')
+    mapClick(container, ...NEAR_STREET_A)
+    mapClick(container, ...NEAR_STREET_B)
+    click(container, 'trace') // stop tracing, keep the 2-point route
+
+    click(container, 'skeleton-build')
+    click(container, 'skeleton-dismiss')
+
+    expect(container.querySelectorAll('.skeleton-marker')).toHaveLength(0)
+    expect(panel(container).querySelector('[data-role="skeleton-build"]')).not.toBeNull()
+    expect(panel(container).textContent).toMatch(/Route length/) // the manual trace is untouched
+
+    app.destroy()
+    container.remove()
+  })
+
+  it('building a skeleton clears an active suggestion preview, and vice versa', async () => {
+    const container = mount()
+    const app = createMapApp(container, circuits)
+
+    click(container, 'suggest')
+    await flush()
+    expect(panel(container).querySelector('[data-role="suggest-list"]')).not.toBeNull()
+
+    click(container, 'skeleton-build')
+    expect(panel(container).querySelector('[data-role="suggest-list"]')).toBeNull()
+    expect(container.querySelectorAll('.skeleton-marker').length).toBeGreaterThan(0)
+
+    click(container, 'suggest')
+    await flush()
+    expect(panel(container).querySelector('[data-role="suggest-list"]')).not.toBeNull()
+    expect(container.querySelectorAll('.skeleton-marker')).toHaveLength(0)
+
+    app.destroy()
+    container.remove()
+  })
+})

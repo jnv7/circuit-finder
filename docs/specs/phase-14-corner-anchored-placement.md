@@ -1,6 +1,7 @@
 # Spec — Phase 14: Corner-anchored, human-adjustable placement
 
-Status: `todo`
+Status: `done` (shipped 2026-09-14 — see the ROADMAP decision log for the
+real-data result)
 Depends on: [phase-13-honest-suggestions.md](phase-13-honest-suggestions.md),
 [phase-7-street-graph.md](phase-7-street-graph.md),
 [phase-5-trace-and-study.md](phase-5-trace-and-study.md)

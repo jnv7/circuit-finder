@@ -228,6 +228,61 @@ body,
   color: #555;
 }
 
+.controls .skeleton {
+  display: grid;
+  gap: 8px;
+}
+
+.controls .skeleton > button,
+.controls .skeleton__actions button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  background: #fff;
+  cursor: pointer;
+}
+
+.controls .skeleton > button:hover,
+.controls .skeleton__actions button:hover {
+  background: #f0f0f0;
+}
+
+.controls .skeleton > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.controls .skeleton__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.controls .skeleton__summary {
+  margin: 0;
+  font-size: 12px;
+  color: #555;
+}
+
+.skeleton-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #6a1b9a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+}
+
+.skeleton-marker--gap {
+  border-color: #c62828;
+}
+
+.skeleton-marker:active {
+  cursor: grabbing;
+}
+
 .controls.study-summary {
   gap: 12px;
 }

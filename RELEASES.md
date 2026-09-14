@@ -8,6 +8,43 @@ Newest release first.
 
 ---
 
+## 0.12.0 — Find corner anchors: a skeleton you can drag into shape (2026-09-14)
+
+**A new way to build a route: let the tool place the circuit's corners, then
+drag any one that lands wrong.** Until now, once you'd placed a circuit, the
+only way to turn it into a real route was clicking your way along streets
+from scratch — the hard part (finding a sequence of real streets that
+actually closes into something circuit-shaped) was entirely on you.
+
+With a placement chosen, press **Find corner anchors**. The tool reduces the
+circuit to its significant corners — 10-20 points, not the whole dense
+outline — and looks for a real street near each one independently, then
+routes between consecutive corners along the street network. The result
+appears on the map as a set of small draggable markers joined by lines: solid
+where a real street connects two corners, **red dashed** where it doesn't (a
+gap, same honest marking manual tracing already uses).
+
+**What you can do with it:**
+
+- **Drag any marker** to a different nearby street — a bad automatic pick
+  becomes a two-second fix instead of a reason to distrust the whole thing.
+  Only the two lines touching that corner update.
+- The panel shows a plain summary — corner count, real length, and how many
+  gaps remain — no score, just metres.
+- **Use as route** hands the current skeleton to the same trace/study/save
+  tools a hand-traced route already uses — it becomes an ordinary, editable
+  route from that point on.
+- **Dismiss** throws it away without touching anything else.
+
+**Honestly, on the three bundled circuits:** this starting skeleton lands
+close to the circuit's real length for two of them (Catalunya, Silverstone)
+and needs more dragging for the third (Hungaroring, whose streets detour
+further from a straight corner-to-corner line) — it is a first sketch to
+adjust, not a finished route, and it says so with plain numbers rather than
+a score.
+
+---
+
 ## 0.11.1 — Suggestions are honest starting spots again, not a claimed route (2026-09-13)
 
 **"Suggest placements" no longer claims to hand you a runnable loop.** A

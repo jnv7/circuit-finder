@@ -87,6 +87,12 @@ export function clearRoute(state: AppState): AppState {
   return { ...state, route: [] }
 }
 
+/** Replace the traced route wholesale — e.g. committing a Phase 14 corner
+ *  skeleton's point sequence once the user is happy with it. Pure. */
+export function setRoute(state: AppState, route: readonly LonLat[]): AppState {
+  return { ...state, route: route.map((p) => [p[0], p[1]] as LonLat) }
+}
+
 /**
  * Drop the circuit onto a given placement (a Phase 6 suggestion, or any future
  * "jump to a placement" need): replace `state.placement` with a fresh copy and

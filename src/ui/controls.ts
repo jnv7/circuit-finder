@@ -32,8 +32,16 @@ export type ControlsView = {
   circuitLengthM: number
   /** Suggested-placements section state (Phase 6). */
   suggest: SuggestView
+  /** Corner-anchored skeleton section state (Phase 14). */
+  skeleton: SkeletonView
   /** Reference time for the "Saved …" relative label. Defaults to now. */
   now?: Date
+}
+
+export type SkeletonView = {
+  phase: 'idle' | 'built'
+  /** Only present when `phase === 'built'`. */
+  stats?: { cornerCount: number; lengthM: number; gapCount: number }
 }
 
 export type SuggestView = {
@@ -61,6 +69,9 @@ export type ControlsHandlers = {
   onUseSuggestion(index: number): void
   onPreviewSuggestion(index: number | null): void
   onClearSuggestions(): void
+  onBuildSkeleton(): void
+  onCommitSkeleton(): void
+  onDismissSkeleton(): void
 }
 
 export type ReadoutValues = {
@@ -153,6 +164,7 @@ export function renderControls(view: ControlsView): string {
         <select data-role="circuit">${options}</select>
       </label>
       ${renderSuggestSection(view)}
+      ${renderSkeletonSection(view)}
       <label class="control">
         <span>Scale ×</span>
         <input
@@ -267,6 +279,37 @@ function renderSuggestSection(view: ControlsView): string {
   `
 }
 
+/** The "Find corner anchors" block (Phase 14): an opt-in button that builds a
+ *  draggable skeleton of the circuit's significant corners resolved against
+ *  real streets, then — once built — its honest summary (corner count,
+ *  length, gap count) and the actions to commit it as the traced route or
+ *  dismiss it. */
+function renderSkeletonSection(view: ControlsView): string {
+  const { skeleton } = view
+
+  if (skeleton.phase === 'built' && skeleton.stats) {
+    const { cornerCount, lengthM, gapCount } = skeleton.stats
+    return `
+      <div class="skeleton" data-role="skeleton-panel">
+        <p class="skeleton__summary" data-role="skeleton-summary">
+          ${cornerCount} corner${cornerCount === 1 ? '' : 's'} · ${formatDistance(lengthM)} · ${gapCount} gap${gapCount === 1 ? '' : 's'}
+        </p>
+        <div class="skeleton__actions">
+          <button type="button" data-role="skeleton-commit">Use as route</button>
+          <button type="button" data-role="skeleton-dismiss">Dismiss</button>
+        </div>
+      </div>
+    `
+  }
+
+  const disabled = view.previewingSaved || view.tracing ? ' disabled' : ''
+  return `
+    <div class="skeleton" data-role="skeleton-panel">
+      <button type="button" data-role="skeleton-build"${disabled}>Find corner anchors</button>
+    </div>
+  `
+}
+
 /** The stripped-down study view: just the route stats and a way back. */
 function renderStudySummary(view: ControlsView): string {
   return `
@@ -354,6 +397,9 @@ export function bind(root: ParentNode, handlers: ControlsHandlers): () => void {
     [btn('suggest'), handlers.onSuggest],
     [btn('suggest-cancel'), handlers.onCancelSuggest],
     [btn('suggest-clear'), handlers.onClearSuggestions],
+    [btn('skeleton-build'), handlers.onBuildSkeleton],
+    [btn('skeleton-commit'), handlers.onCommitSkeleton],
+    [btn('skeleton-dismiss'), handlers.onDismissSkeleton],
   ]
 
   // Suggestion rows: "Use this" per row, and hover / focus to preview it.

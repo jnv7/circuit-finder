@@ -9,6 +9,7 @@ import {
   moveTo,
   rotateTo,
   selectCircuit,
+  setRoute,
   setScale,
   undoRoutePoint,
 } from './state'
@@ -60,6 +61,19 @@ describe('reducers', () => {
     expect(clearRoute(b).route).toEqual([])
     expect(undoRoutePoint(base)).toBe(base)
     expect(b.placement).toBe(base.placement)
+  })
+
+  it('setRoute replaces the route wholesale, copied not aliased', () => {
+    const traced = addRoutePoint(base, [1, 2])
+    const points: Array<[number, number]> = [
+      [10, 20],
+      [30, 40],
+    ]
+    const next = setRoute(traced, points)
+    expect(next.route).toEqual(points)
+    points[0]![0] = 999 // mutate the input after the fact
+    expect(next.route[0]).toEqual([10, 20]) // unaffected — a copy, not the same array
+    expect(next.placement).toBe(traced.placement)
   })
 
   it('selectCircuit throws on an unknown id', () => {

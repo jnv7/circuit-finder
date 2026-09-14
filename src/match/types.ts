@@ -1,7 +1,11 @@
-// Shared types for the Phase 6 placement search. See
-// docs/specs/phase-6-suggested-placements.md.
+// Shared types for the Phase 6 placement search, plus the Phase 14
+// corner-anchored skeleton. See docs/specs/phase-6-suggested-placements.md and
+// docs/specs/phase-14-corner-anchored-placement.md.
 import type { Placement } from '../app/overlay'
+import type { RouteLeg } from '../app/trace'
+import type { Corner } from '../geometry/corners'
 import type { Point } from '../geometry/types'
+import type { NodeId } from '../graph'
 import type { Street, StreetIndex } from '../streets'
 
 /** A pose for the circuit in the Porto metric frame: where its centroid sits
@@ -61,3 +65,36 @@ export type SearchOptions = Partial<{
   wProcrustes: number
   alignMaxRad: number
 }>
+
+// --- Phase 14: corner-anchored skeleton -------------------------------------
+
+/** A significant corner of the circuit's own outline, plus the circuit's
+ *  local heading there (already rotated to a placement's orientation) — used
+ *  to align the per-landmark street search the same way Phase 6-12 do. */
+export type Landmark = { corner: Corner; heading: Point }
+
+/** Where a landmark currently resolves to on the real street network for a
+ *  given placement: a Porto-frame point + graph node, or `null` if nothing
+ *  acceptable was found (a gap, same concept as `RouteLeg.real === false`). */
+export type LandmarkAnchor = {
+  landmark: Landmark
+  point: Point | null
+  node: NodeId | null
+}
+
+/** The closed sequence of legs connecting consecutive landmark anchors, in
+ *  landmark order (the last connects back to the first). A working
+ *  scratchpad while the user builds a route — not persisted directly. */
+export type SkeletonLoop = {
+  anchors: LandmarkAnchor[]
+  legs: RouteLeg[]
+  lengthM: number
+  meanDeviationM: number
+  maxDeviationM: number
+  gapCount: number
+  /** The candidate-placed (unsnapped) landmark corner points, in landmark
+   *  order — the deviation reference ring. Kept on the loop (beyond the
+   *  spec's original sketch) so `moveLandmark` can recompute totals from the
+   *  legs alone, without needing the placement (candidate/scale) again. */
+  placedRingM: Point[]
+}

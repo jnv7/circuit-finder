@@ -24,13 +24,15 @@ import {
   moveTo,
   rotateTo,
   selectCircuit,
+  setRoute,
   setScale,
   undoRoutePoint,
 } from './state'
 import { createSuggester } from './suggest'
 import type { Suggester } from './suggest'
-import type { SearchInput, Suggestion } from '../match/types'
-import type { SuggestView } from '../ui/controls'
+import type { Candidate, SearchInput, SkeletonLoop, Suggestion } from '../match/types'
+import { buildLandmarks, buildSkeletonLoop, moveLandmark } from '../match/landmarks'
+import type { SkeletonView, SuggestView } from '../ui/controls'
 import {
   getPlacement,
   makeSavedPlacement,
@@ -58,6 +60,10 @@ const ROUTE_COLOR = '#1565c0'
 /** Phase 10: a leg the street network can't connect, drawn as a straight
  *  line and flagged visibly instead of silently included. */
 const GAP_COLOR = '#c62828'
+
+/** Phase 14: the corner-anchored skeleton's real legs, distinct from the
+ *  committed route's own colour since it is still a scratchpad. */
+const SKELETON_COLOR = '#6a1b9a'
 
 /** A click within this distance of the street network snaps to it while tracing. */
 const SNAP_MAX_M = 30
@@ -135,6 +141,17 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
     previewSuggestion = null
   }
 
+  // Phase 14: the corner-anchored skeleton, a transient scratchpad built by
+  // an explicit action alongside `previewSuggestion` — discarded on circuit
+  // change / trace-mode toggle / dismiss, never saved directly. Mutually
+  // exclusive with a suggestion preview (same pattern `clearSuggestions()`
+  // already enforces against `previewingSaved`).
+  let skeleton: SkeletonLoop | null = null
+
+  function clearSkeleton(): void {
+    skeleton = null
+  }
+
   let state: AppState = initialState(circuits, PORTO_CENTER)
   {
     const saved = getPlacement(placements, state.circuitId)
@@ -192,6 +209,21 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   }).addTo(map)
   const vertexLayer = L.layerGroup().addTo(map)
 
+  // Phase 14 skeleton: draggable corner markers plus its own real/gap
+  // polylines (same honest red-dashed gap language as the traced route's).
+  const skeletonRealLine = L.polyline([], {
+    weight: 4,
+    color: SKELETON_COLOR,
+    interactive: false,
+  }).addTo(map)
+  const skeletonGapLine = L.polyline([], {
+    weight: 4,
+    color: GAP_COLOR,
+    dashArray: '6 4',
+    interactive: false,
+  }).addTo(map)
+  const skeletonMarkerLayer = L.layerGroup().addTo(map)
+
   const savedForCurrent = (): SavedPlacement | undefined =>
     getPlacement(placements, state.circuitId)
   const hasUnsavedChanges = (): boolean => {
@@ -229,6 +261,30 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
   const currentRouteStats = (): RouteStats | null => routeStatsFor(expandedRouteWithGaps().points)
   const circuitLapM = (): number =>
     readout(circuitById(state.circuitId), state.placement.scale).lapM
+
+  const skeletonView = (): SkeletonView =>
+    skeleton
+      ? {
+          phase: 'built',
+          stats: {
+            cornerCount: skeleton.anchors.length,
+            lengthM: skeleton.lengthM,
+            gapCount: skeleton.gapCount,
+          },
+        }
+      : { phase: 'idle' }
+
+  /** Flatten a skeleton's legs into one point sequence, without repeating the
+   *  shared point at each leg boundary (same convention `joinWaypoints`
+   *  itself already follows when building one leg's own points). */
+  const flattenLoopPoints = (legs: readonly RouteLeg[]): Point[] => {
+    const points: Point[] = []
+    for (const leg of legs) {
+      if (points.length === 0) points.push(leg.points[0]!)
+      for (let i = 1; i < leg.points.length; i++) points.push(leg.points[i]!)
+    }
+    return points
+  }
 
   function render({ repositionHandle = true }: { repositionHandle?: boolean } = {}): void {
     const circuit = circuitById(state.circuitId)
@@ -301,6 +357,47 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       }
     }
 
+    // Phase 14: the corner skeleton's legs and one draggable marker per
+    // landmark anchor — map-only, same as the rotate handle, not listed in
+    // the panel.
+    skeletonMarkerLayer.clearLayers()
+    if (skeleton) {
+      const sk = skeleton
+      skeletonRealLine.setLatLngs(toLegLatLngs(sk.legs.filter((l) => l.real)))
+      skeletonGapLine.setLatLngs(toLegLatLngs(sk.legs.filter((l) => !l.real)))
+      sk.anchors.forEach((anchor, i) => {
+        const metricPoint = anchor.point ?? sk.placedRingM[i]!
+        const marker = L.marker(toLatLng(project.toLonLat(metricPoint)), {
+          draggable: true,
+          keyboard: false,
+          icon: L.divIcon({
+            className: anchor.point ? 'skeleton-marker' : 'skeleton-marker skeleton-marker--gap',
+            iconSize: [14, 14],
+          }),
+          zIndexOffset: 900,
+        })
+        marker.on('dragend', () => {
+          if (!skeleton) return
+          const ll = marker.getLatLng()
+          const metric = project.toLocal([ll.lng, ll.lat])
+          const resolved = streetGraph.nearestPointM(metric, SNAP_MAX_M)
+          skeleton = moveLandmark(
+            skeleton,
+            i,
+            resolved ? resolved.point : metric,
+            resolved ? resolved.node : null,
+            streetGraph,
+          )
+          renderPanel()
+          render()
+        })
+        marker.addTo(skeletonMarkerLayer)
+      })
+    } else {
+      skeletonRealLine.setLatLngs([])
+      skeletonGapLine.setLatLngs([])
+    }
+
     const { lapM, straightM } = readout(circuit, shown.scale)
     updateReadout(panelEl, {
       lapM,
@@ -371,6 +468,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       routeStats: currentRouteStats(),
       circuitLengthM: circuitLapM(),
       suggest,
+      skeleton: skeletonView(),
     })
     disposeControls?.()
     disposeControls = bind(panelEl, {
@@ -378,6 +476,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         state = selectCircuit(state, circuits, id)
         previewingSaved = false
         clearSuggestions()
+        clearSkeleton()
         const s = getPlacement(placements, id)
         if (s) {
           state = loadPlacement(state, circuits, s.circuitId, savedToPlacement(s), savedRoute(s))
@@ -440,7 +539,10 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       },
       onTogglePreviewSaved(show) {
         previewingSaved = show && savedForCurrent() !== undefined
-        if (previewingSaved) clearSuggestions()
+        if (previewingSaved) {
+          clearSuggestions()
+          clearSkeleton()
+        }
         renderPanel()
         render()
       },
@@ -448,6 +550,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         tracing = !tracing
         if (tracing) previewingSaved = false
         clearSuggestions()
+        clearSkeleton()
         applyLayerVisibility()
         renderPanel()
         render()
@@ -466,6 +569,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         studyView = !studyView
         if (studyView) tracing = false
         clearSuggestions()
+        clearSkeleton()
         applyLayerVisibility()
         renderPanel()
         render()
@@ -490,6 +594,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         const active = suggester
         previewingSaved = false
         previewSuggestion = null
+        clearSkeleton()
         suggest = {
           phase: 'running',
           progress: { done: 0, total: 1 },
@@ -544,6 +649,7 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
         }
         state = applyPlacement(state, chosen.placement)
         clearSuggestions()
+        clearSkeleton()
         previewingSaved = false
         map.setView(toLatLng(state.placement.anchor))
         renderPanel()
@@ -557,6 +663,37 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       },
       onClearSuggestions() {
         clearSuggestions()
+        renderPanel()
+        render()
+      },
+      onBuildSkeleton() {
+        const circuit = circuitById(state.circuitId)
+        const candidate: Candidate = {
+          anchorM: project.toLocal(state.placement.anchor),
+          rotationRad: state.placement.rotationRad,
+        }
+        const landmarks = buildLandmarks(
+          resample(circuit.metricCentreline, SAMPLE_M),
+          candidate.rotationRad,
+        )
+        skeleton = buildSkeletonLoop(landmarks, candidate, state.placement.scale, streetGraph)
+        clearSuggestions()
+        previewingSaved = false
+        renderPanel()
+        render()
+      },
+      onCommitSkeleton() {
+        if (!skeleton) return
+        state = setRoute(
+          state,
+          flattenLoopPoints(skeleton.legs).map((p) => project.toLonLat(p)),
+        )
+        clearSkeleton()
+        renderPanel()
+        render()
+      },
+      onDismissSkeleton() {
+        clearSkeleton()
         renderPanel()
         render()
       },
@@ -654,6 +791,9 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
       routeLine.remove()
       routeGapLine.remove()
       vertexLayer.remove()
+      skeletonRealLine.remove()
+      skeletonGapLine.remove()
+      skeletonMarkerLayer.remove()
       map.off()
       map.remove()
       container.replaceChildren()

@@ -19,6 +19,7 @@ const idleSuggest = {
   suggestions: [] as const,
   selectedIndex: null,
 }
+const idleSkeleton = { phase: 'idle' as const }
 const sampleSuggestion = (over: Record<string, unknown> = {}) => ({
   placement: { anchor: [-8.61, 41.15] as [number, number], rotationRad: 0.1, scale: 1 },
   coverageFraction: 0.78,
@@ -40,6 +41,7 @@ const view = (over: Partial<Parameters<typeof renderControls>[0]> = {}) => ({
   routeStats: null,
   circuitLengthM: 4000,
   suggest: idleSuggest,
+  skeleton: idleSkeleton,
   ...over,
 })
 
@@ -67,6 +69,9 @@ const noopHandlers = () => ({
   onUseSuggestion: vi.fn(),
   onPreviewSuggestion: vi.fn(),
   onClearSuggestions: vi.fn(),
+  onBuildSkeleton: vi.fn(),
+  onCommitSkeleton: vi.fn(),
+  onDismissSkeleton: vi.fn(),
 })
 
 describe('renderControls', () => {
@@ -364,6 +369,71 @@ describe('renderControls — suggest placements section', () => {
     expect(html).toContain('data-role="suggest-clear"')
     expect(html).not.toContain('data-role="suggest-list"')
     expect(html).toContain('suggest__empty')
+  })
+})
+
+describe('renderControls — corner skeleton section', () => {
+  it('idle: renders the build button, disabled while tracing or previewing', () => {
+    expect(renderControls(view())).toMatch(/data-role="skeleton-build"(?![^>]*disabled)/)
+    expect(renderControls(view({ tracing: true }))).toMatch(
+      /data-role="skeleton-build"[^>]*disabled/,
+    )
+    expect(renderControls(view({ previewingSaved: true }))).toMatch(
+      /data-role="skeleton-build"[^>]*disabled/,
+    )
+  })
+
+  it('built: shows the corner/length/gap summary and both actions', () => {
+    const html = renderControls(
+      view({
+        skeleton: { phase: 'built', stats: { cornerCount: 14, lengthM: 4230, gapCount: 2 } },
+      }),
+    )
+    expect(html).toContain('14 corners')
+    expect(html).toContain('2 gaps')
+    expect(html).toContain('data-role="skeleton-commit"')
+    expect(html).toContain('data-role="skeleton-dismiss"')
+    expect(html).not.toContain('data-role="skeleton-build"')
+  })
+
+  it('built: singular wording for exactly one corner or gap', () => {
+    const html = renderControls(
+      view({
+        skeleton: { phase: 'built', stats: { cornerCount: 1, lengthM: 500, gapCount: 1 } },
+      }),
+    )
+    expect(html).toContain('1 corner ')
+    expect(html).toContain('1 gap')
+    expect(html).not.toContain('1 corners')
+    expect(html).not.toContain('1 gaps')
+  })
+})
+
+describe('bind — corner skeleton section', () => {
+  it('wires build, commit and dismiss', () => {
+    const idle = document.createElement('div')
+    idle.innerHTML = renderControls(view())
+    const h1 = noopHandlers()
+    bind(idle, h1)
+    idle.querySelector<HTMLButtonElement>('[data-role="skeleton-build"]')!.dispatchEvent(
+      new Event('click'),
+    )
+    expect(h1.onBuildSkeleton).toHaveBeenCalledTimes(1)
+
+    const built = document.createElement('div')
+    built.innerHTML = renderControls(
+      view({ skeleton: { phase: 'built', stats: { cornerCount: 10, lengthM: 3000, gapCount: 0 } } }),
+    )
+    const h2 = noopHandlers()
+    bind(built, h2)
+    built.querySelector<HTMLButtonElement>('[data-role="skeleton-commit"]')!.dispatchEvent(
+      new Event('click'),
+    )
+    expect(h2.onCommitSkeleton).toHaveBeenCalledTimes(1)
+    built.querySelector<HTMLButtonElement>('[data-role="skeleton-dismiss"]')!.dispatchEvent(
+      new Event('click'),
+    )
+    expect(h2.onDismissSkeleton).toHaveBeenCalledTimes(1)
   })
 })
 

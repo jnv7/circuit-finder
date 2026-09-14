@@ -6,21 +6,18 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**Phase 13 shipped 2026-09-13: `match/loopSearch.ts` is deleted and
-**Suggest placements** is back to Phase 6/12's honest coverage-percentage
-list** — see the decision log below for confirmation (`grep` for the deleted
-types returns nothing, 253 tests pass, `npm run build` clean). Next up:
+**Phase 14 shipped 2026-09-14: corner-anchored, human-adjustable placement
+— the actual replacement for the deleted rigid-pose loop search** — see the
+decision log below for the real corner/gap/length numbers. Nothing is
+currently prioritized beyond the *Later — not scheduled* list below; pick an
+item from there and write it a spec when ready.
 
-- [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md)
-  — the actual replacement: reduce the circuit to its significant corners,
-  search each independently against real streets (not one rigid transform for
-  all of them), route between them with the existing graph/A*, and let the
-  user drag any corner to a better real street — then commit the result as a
-  normal traced route.
-
-The *Later — not scheduled* list below is unchanged and still available once
-Phase 14 lands.
-
+- ~~[specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md)
+  — reduce the circuit to its significant corners, search each independently
+  against real streets (not one rigid transform for all of them), route
+  between them with the existing graph/A*, and let the user drag any corner
+  to a better real street — then commit the result as a normal traced
+  route.~~ **Done** — see the decision log below for the real-data result.
 - ~~[specs/phase-11-straighten-best-effort-loops.md](specs/phase-11-straighten-best-effort-loops.md)
   — best-effort loops snap each sample to the nearest street point blind to
   direction, so a sample can jog onto a misaligned side street or driveway
@@ -284,7 +281,7 @@ Spec: [specs/phase-13-honest-suggestions.md](specs/phase-13-honest-suggestions.m
 - Motivated entirely by the 2026-09-13 review's evidence, not by any new
   finding of this phase's own.
 
-### Phase 14 — Corner-anchored, human-adjustable placement — `todo`
+### Phase 14 — Corner-anchored, human-adjustable placement — `done`
 
 Spec: [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md).
 
@@ -298,6 +295,12 @@ Spec: [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchor
   should come in under 1.2× real length with under 4 gaps at the best
   candidate placement, *before* manual dragging — a material improvement over
   Phases 10-12's 1.43-2.24× / 10-29 gaps.
+- **Real-data result: only 1 of 3 circuits clears the full bar** (Catalunya,
+  1.00×/2 gaps) — Silverstone clears the length half but not the gap half
+  (1.00×/4 gaps, the spec's bar is *under* 4) and Hungaroring clears neither
+  (1.41×/0 gaps). Shipped anyway per the spec's own instruction, with the
+  honest number recorded rather than the bar declared met — see the decision
+  log below for the full tuning story.
 
 ### Later — not scheduled
 
@@ -328,6 +331,101 @@ Spec: [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchor
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-14 — Phase 14 shipped: corner-anchored, human-adjustable
+  placement.** Implements
+  [specs/phase-14-corner-anchored-placement.md](specs/phase-14-corner-anchored-placement.md)
+  as written, no scope changes. `geometry/corners.ts` (new): `extractCorners`
+  walks a closed path's joint turn angles — sharing `straight.ts`'s
+  `buildSegments`/`turn` (now exported for this, per the spec's "share, don't
+  duplicate" note) rather than reimplementing the segment-direction
+  machinery — keeps every joint whose turn exceeds `minTurnRad` (0.35 rad,
+  ~20°), then repeatedly merges the closest circularly-adjacent pair of
+  surviving corners while under `minSpacingM` (60 m), keeping the sharper of
+  the two, until nothing is close enough left to merge. `match/landmarks.ts`
+  (new): `buildLandmarks` turns a circuit's corners into `Landmark`s (corner +
+  local heading, reusing `objective.ts`'s `localHeading` so a landmark's
+  heading is computed exactly the way every other phase's alignment checks
+  already are); `resolveLandmark` places one landmark under a candidate pose
+  and searches `StreetGraph.nearestAlignedPointM` within
+  `LANDMARK_SEARCH_RADIUS_M` (120 m — 4× the old rigid-loop
+  `LOOP_SNAP_MAX_M`, since there are far fewer points to place and each one
+  matters more); `buildSkeletonLoop` resolves every landmark and joins them
+  leg by leg via `app/trace.ts`'s existing `joinWaypoints` (unchanged); `SkeletonLoop`
+  also carries `placedRingM` (the candidate-placed, unsnapped corner ring) —
+  one field beyond the spec's original type sketch, added so `moveLandmark`
+  can recompute a moved corner's two legs and the loop's totals without
+  needing the placement (candidate/scale) a second time, since a resolved
+  anchor's exact street point and an unresolved one's fallback position are
+  otherwise unrecoverable from the anchor list alone. `moveLandmark` replaces
+  one anchor, re-joins only its two adjacent legs (every other leg object in
+  the returned loop is the *same reference* as before — verified by a
+  dedicated test — so a drag never re-runs `shortestPath` on legs it didn't
+  touch), and recomputes `lengthM`/deviation/`gapCount` from the merged leg
+  list, which is cheap arithmetic, not a graph search. `app/state.ts` gained
+  the trivial `setRoute` reducer. `app/map.ts`: `onBuildSkeleton` builds a
+  skeleton from the live placement; a `L.marker` per anchor (purple ring,
+  red ring when unresolved) is draggable, snapping on `dragend` via the same
+  `streetGraph.nearestPointM(_, SNAP_MAX_M)` trace mode already uses, calling
+  `moveLandmark` — a drop with nothing in range still moves the marker with
+  `node: null`, an honest new gap, never a silently-rejected drag;
+  `onCommitSkeleton` flattens the skeleton's legs (de-duplicating the shared
+  point at each leg boundary) into `state.route` via `setRoute` and discards
+  the skeleton, after which it behaves exactly like a hand-traced route,
+  measured/saved/exported with no schema change; `onDismissSkeleton` discards
+  it untouched. Building, using a suggestion, or previewing a suggestion each
+  clear the other's transient UI (skeleton ⟷ suggestion preview), mirroring
+  the existing `previewingSaved` mutual-exclusion pattern. `ui/controls.ts`
+  gained a "Find corner anchors" section (idle button; built: "N corners ·
+  X.XX km · N gaps" plus **Use as route**/**Dismiss**), between "Suggest
+  placements" and "Route". No change to `graph.ts`, `streets.ts`,
+  `app/proximity.ts`, `match/search.ts`, `match/straights.ts`,
+  `match/objective.ts`, or `placements.ts` — this phase composes existing,
+  already-correct infrastructure, per the spec's explicit instruction not to
+  resurrect any part of the deleted rigid-pose `match/loopSearch.ts`
+  (confirmed: nothing in the new code imports from or references the deleted
+  module's types or functions).
+  **Constants tuned against the three bundled circuits** (a throwaway sweep
+  script, run and discarded, not committed): the spec's starting values
+  (`MIN_TURN_RAD` 0.35, `MIN_CORNER_SPACING_M` 60, `LANDMARK_SEARCH_RADIUS_M`
+  120) already came out best among everything tried. Coarser thresholds
+  (fewer, more merged corners) consistently made the skeleton *undershoot*
+  the circuit's real length (ratios as low as 0.48-0.75×) by cutting real
+  corners off the shape entirely, not just simplifying it; finer thresholds
+  (more corners) consistently raised both the length ratio and the gap count,
+  since more, closer-together landmarks means more independent chances for a
+  street-alignment or connectivity miss. Widening
+  `LANDMARK_SEARCH_RADIUS_M` (120 → 250 m) changed nothing at all for any
+  bundled circuit — confirming (as Phase 8/9's investigation found for the
+  old rigid loop) that gaps here come from real street disconnection, not
+  from the search radius being too tight. Shipped at the spec's original
+  values, unchanged.
+  **Real-data result — the number the spec's acceptance bar is judged
+  against:** at the best Phase 6/12 candidate placement, before any manual
+  dragging — hungaroring: 10 corners, 1.41× real length, 0 gaps; silverstone:
+  8 corners, 1.00×, 4 gaps; catalunya: 9 corners, 1.00×, 2 gaps. Against the
+  spec's bar (under 1.2× *and* under 4 gaps, on at least two of three
+  circuits): **only catalunya clears both.** Silverstone clears the length
+  half but not the gap half (4 gaps is not *under* 4); hungaroring clears
+  neither (though its 0 gaps mean everything it did resolve connects, just
+  via a longer real detour than a straight corner-to-corner line would
+  suggest — a routing-shape mismatch, not a connectivity failure). Shipped
+  anyway, per the spec's own explicit instruction to ship and record the
+  honest number rather than adjust the bar to declare victory — the
+  drag-to-adjust interaction is the actual point, and an imperfect automatic
+  starting skeleton is still a real, nameable improvement over both the
+  deleted best-effort loop (1.43-2.24×, 10-29 gaps) and an unaided blank map.
+  279 tests pass (up from 253 before this phase; `npm run build` clean).
+  Under this session's heavy concurrent machine load, a full parallel
+  `npm run test:run` showed 9 timeouts across `graph.test.ts`,
+  `match/search.test.ts`, `app/map.test.ts`, and this phase's own
+  `match/landmarks.test.ts` real-data case — every one a default-timeout
+  artifact (several took 500-600 s under load, including cases unrelated to
+  this phase, like `graph.test.ts`'s pre-existing connectivity check), never
+  a logic failure, and every one passed cleanly re-run in isolation on a
+  quiet machine — the same known resource-profile characteristic noted in
+  the Phase 10/12/13 decision log entries, not a regression from this
+  phase's changes.
 
 - **2026-09-13 — Phase 13 shipped: `match/loopSearch.ts` deleted, Suggest
   placements back to an honest coverage list.** Directly implements the
