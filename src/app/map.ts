@@ -9,8 +9,10 @@ import type { LonLat } from '../geo'
 import type { Point } from '../geometry/types'
 import { resample } from '../geometry/path'
 import { buildStreetGraph } from '../graph'
+import type { StreetGraph } from '../graph'
 import { PORTO_CENTER, PORTO_ZOOM, portoProjection } from '../porto'
 import { buildStreetIndex, loadStreetNetwork } from '../streets'
+import type { StreetIndex, StreetNetwork } from '../streets'
 import { overlayLatLngs, readout } from './overlay'
 import { LEVELS, SAMPLE_M, lapDeviation, lapProximity, proximityColor, quantize } from './proximity'
 import { bearingFromDrag, handlePixel } from './rotate'
@@ -76,7 +78,21 @@ const toLatLng = ([lon, lat]: LonLat): L.LatLng => L.latLng(lat, lon)
 
 export type MapApp = { destroy(): void }
 
-export function createMapApp(container: HTMLElement, circuits: readonly MetricCircuit[]): MapApp {
+/** Phase 16: lets tests share one already-built network/index/graph across
+ *  many `createMapApp` calls instead of paying the ~3 s graph build per
+ *  test. Optional — omitted (the real `main.ts` call site), each piece
+ *  builds itself exactly as before. */
+export type MapAppDeps = {
+  network?: StreetNetwork
+  streetIndex?: StreetIndex
+  streetGraph?: StreetGraph
+}
+
+export function createMapApp(
+  container: HTMLElement,
+  circuits: readonly MetricCircuit[],
+  deps: MapAppDeps = {},
+): MapApp {
   if (circuits.length === 0) throw new Error('createMapApp: no circuits')
 
   container.classList.add('circuit-finder')
@@ -100,9 +116,9 @@ export function createMapApp(container: HTMLElement, circuits: readonly MetricCi
 
   // --- Street network: load, index, draw the faint reference layer ----------
   const project = portoProjection()
-  const network = loadStreetNetwork()
-  const streetIndex = buildStreetIndex(network.ways)
-  const streetGraph = buildStreetGraph(network.ways)
+  const network = deps.network ?? loadStreetNetwork()
+  const streetIndex = deps.streetIndex ?? buildStreetIndex(network.ways)
+  const streetGraph = deps.streetGraph ?? buildStreetGraph(network.ways)
 
   // The network bbox in Porto-frame metres — the area the Phase 6 search sweeps.
   const sw = project.toLocal([network.bbox[0], network.bbox[1]])

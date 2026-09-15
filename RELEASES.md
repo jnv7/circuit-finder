@@ -8,6 +8,36 @@ Newest release first.
 
 ---
 
+## 0.12.2 — The live site is back, and can't silently break like this again (2026-09-15)
+
+**If you've visited circuit-finder recently and it looked broken or
+outdated, that's fixed now.** Since 2026-09-12 the published site had
+stopped running the real app entirely — it was serving raw, unbuilt source
+code instead, which no browser can run properly. Every change made since
+then (corner-anchored placement, the wider-spread suggestions) was correctly
+built and tested, but never actually reached the live page.
+
+Two separate problems caused this, both now fixed:
+
+- The automated tests that gate every deploy could fail under heavy load for
+  reasons unrelated to any real bug, occasionally blocking a good change
+  from ever being built and published. The tests now run far faster and
+  more reliably, so a good change won't get stuck behind a flaky test again.
+- Separately, and this is the part that actually broke the live site: the
+  site's publishing configuration had reverted to an older mode that
+  publishes whatever's in the repository directly, bypassing the proper
+  build step altogether — which is how raw source ended up live instead of
+  the finished app. That configuration is corrected, and every future
+  deploy now double-checks the live page actually loaded the real,
+  built app before calling itself done — so if this, or anything like it,
+  ever happens again, it'll show up as a clear failure instead of a
+  silently broken page.
+
+Nothing about how you use the tool changes — this release is entirely about
+making sure what you see live actually matches what's been built.
+
+---
+
 ## 0.12.1 — Suggestions spread across Porto, not just one neighbourhood (2026-09-14)
 
 **"Suggest placements" no longer favours the same part of town for every

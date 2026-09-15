@@ -6,11 +6,25 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**No phase spec is currently queued.** Phase 15 (below) closed out the
-Suggest-placements clustering problem that had been the priority since
-2026-09-14; no new issue has been reported since. Next up should be chosen
-from the *Later* section below, or from new user feedback, whichever comes
-first — nothing in *Later* is pre-committed to as "next."
+**The published site was found broken on 2026-09-15 and both causes are now
+fixed.** Not missing Phase 13-15's changes, but not running a built
+application at all — see the decision log below for the full investigation
+and both fixes:
+
+- [specs/phase-16-fix-flaky-real-data-tests.md](specs/phase-16-fix-flaky-real-data-tests.md)
+  — **done**: the `CI + Pages` workflow's `npm run test:run` step no longer
+  fails under load, so it stops blocking the real build+deploy.
+- [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pipeline.md)
+  — **done**: the repository's Pages source setting corrected to "GitHub
+  Actions" (was bypassing the workflow, publishing raw branch content
+  regardless of whether the real build ever ran), plus a permanent
+  post-deploy smoke check added so a repeat of this — this cause or a
+  different one — fails the workflow loudly instead of silently serving
+  broken content again.
+
+No phase spec is currently queued next; pick from *Later* below or new
+feedback once the next push confirms the live site is actually serving the
+built app again.
 
 Phase 15 shipped 2026-09-14: spatial-quota coarse search — replaces
 `coarseKeep`'s flat top-16-by-score selection with one-winner-per-macro-cell
@@ -367,6 +381,55 @@ Spec: [specs/phase-15-spatial-quota-search.md](specs/phase-15-spatial-quota-sear
   `npm run test:run` and passed cleanly re-run in isolation — not a
   regression from this phase.
 
+### Phase 16 — Fix the flaky real-data tests (share the graph fixture, real timeouts) — `done`
+
+Spec: [specs/phase-16-fix-flaky-real-data-tests.md](specs/phase-16-fix-flaky-real-data-tests.md).
+
+- `createMapApp` gains an optional fourth `MapAppDeps` parameter
+  (`network`/`streetIndex`/`streetGraph`), defaulting to building them itself
+  — today's behaviour — when omitted; `main.ts`, the one production caller,
+  is unaffected.
+- `app/map.test.ts` builds the network/index/graph once in a module-level
+  `beforeAll` and passes them into all 18 `createMapApp(...)` call sites,
+  removing ~18× redundant ~2.9 s graph builds from the file.
+- Every real-data test now carries an explicit, generous timeout instead of
+  Vitest's 5000 ms default: `graph.test.ts`'s connectivity test gets
+  `30_000`, every `app/map.test.ts` suite gets `15_000` (via `describe(...,
+  { timeout: 15_000 }, ...)`).
+- **Real-data result:** `app/map.test.ts` alone: 48.5 s → 10.3 s (Duration),
+  wall-clock `time`: ~50.2 s → ~12.2 s — matches the spec's "~49 s of
+  redundant work removed" estimate. Two consecutive full-suite runs under
+  `npx vitest run --maxWorkers=2` (approximating the 2-vCPU GitHub Actions
+  runner that failed on 2026-09-14): 284/284 passed both times (27.8 s and
+  25.2 s), zero timeouts either run. `npm run build` and `npm run test:run`
+  both clean (284/284). No assertion's expected behaviour changed anywhere
+  in either file.
+
+### Phase 17 — Harden the deploy pipeline (correct Pages source, post-deploy smoke check) — `done`
+
+Spec: [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pipeline.md).
+
+- **Step 1 (manual, one-time): repository Settings → Pages → Source
+  corrected to "GitHub Actions"** — done by the maintainer directly (not a
+  code change; no tool used by this session has repository-admin access to
+  verify or perform it). This is the actual root fix for "the live site
+  serves raw source" from the 2026-09-15 investigation.
+- **Step 2 (code): a "Verify the deployed site" step added to the end of
+  `.github/workflows/deploy.yml`'s `deploy` job**, right after
+  `actions/deploy-pages@v4` — fetches the deployment's own reported
+  `page_url` and fails the job loudly if the body contains `/src/main.ts`
+  (raw source signature) or lacks a `/circuit-finder/assets/*.js` reference
+  (the real Vite build's actual output pattern, confirmed against a local
+  `npm run build`'s `dist/index.html`). Runs unconditionally after every
+  successful deploy, not just as a one-off check of this incident.
+- No change to the `build` job or any application file — exactly as scoped.
+- **Verified both directions before shipping** (the same "prove the guard
+  rail catches what it's meant to catch" discipline as Phase 9's crossing-
+  detection tests): ran the check's exact `grep` logic locally against (a) a
+  synthetic raw-source HTML body — caught, fails as designed; (b) the real
+  `dist/index.html` from a clean `npm run build` — passes, no false
+  positive.
+
 ### Later — not scheduled
 
 - A saved-placement "repository": more than one saved attempt per circuit, with
@@ -396,6 +459,121 @@ Spec: [specs/phase-15-spatial-quota-search.md](specs/phase-15-spatial-quota-sear
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-15 — Phase 17 shipped: Pages source corrected, permanent
+  post-deploy smoke check added.** Implements
+  [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pipeline.md)
+  as written, no scope changes. **Step 1**: the repository's Settings →
+  Pages → Source was corrected to "GitHub Actions" — done directly by the
+  maintainer, confirmed to this session verbally, since no tool available to
+  this session has the repository-admin access needed to read or change that
+  setting itself. This is the actual root fix for "the live site serves raw
+  source instead of the deployed app" found in the 2026-09-15 investigation.
+  **Step 2**: `.github/workflows/deploy.yml`'s `deploy` job gained one new
+  step, "Verify the deployed site is the built app, not raw source", right
+  after the existing `actions/deploy-pages@v4` step — fetches
+  `steps.deployment.outputs.page_url` and fails the job (`::error::` +
+  `exit 1`) if the body contains the literal `/src/main.ts` (raw-source
+  signature) or lacks a `/circuit-finder/assets/*.js` reference. The asset
+  pattern was checked against a real local `npm run build`'s
+  `dist/index.html` before finalising (per the spec's explicit instruction
+  not to guess it) — Vite emits exactly `/circuit-finder/assets/index-
+  <hash>.js` and `.css`, confirming the sketch's pattern needed no
+  adjustment. No change to the `build` job or any application file. **Guard
+  rail verified both directions, the same discipline Phase 9's crossing-
+  detection tests already apply to application code**: ran the check's exact
+  shell logic locally against a synthetic raw-source HTML body (caught,
+  fails as designed, same `::error::` message) and against the real
+  `dist/index.html` from a clean build (passes, no false positive) — the
+  spec's own "regression check, deliberately run once" requirement, done as
+  a local simulation rather than a live scratch deploy since no CI trigger
+  was available mid-session. YAML validity of the edited workflow confirmed
+  (`ruby -ryaml`, since neither `js-yaml` nor Python's `yaml` module was
+  available in this environment) — structure parses correctly, `deploy`
+  job's `steps` array has exactly the original `deployment` step plus the
+  one new step. The workflow's actual live-deploy behaviour (does the new
+  step run and pass against a real GitHub Pages deployment) is confirmed by
+  the next push to `main`, not by this local simulation alone — see
+  *Acceptance criteria* in the spec.
+
+- **2026-09-15 — Phase 16 shipped: shared graph fixture + real timeouts for
+  the flaky real-data tests, implemented as written, no scope changes.**
+  `src/app/map.ts`'s `createMapApp` gained an optional fourth `MapAppDeps`
+  parameter (`network`/`streetIndex`/`streetGraph`, each defaulting to
+  building itself via `??` exactly as before when omitted) — `main.ts`, the
+  one production call site, passes no `deps` and is unaffected, confirmed by
+  the diff touching only `map.ts`/`map.test.ts`/`graph.test.ts`.
+  `src/app/map.test.ts` now builds `network`/`streetIndex`/`streetGraph`
+  once in a module-level `beforeAll` and passes them via `deps` at all 18
+  `createMapApp(...)` call sites; every one of its five top-level `describe`
+  blocks got `{ timeout: 15_000 }` (propagates to nested `it`s, per Vitest's
+  `SuiteOptions extends TestOptions`) instead of the 5000 ms global default.
+  `src/graph.test.ts`'s real-data connectivity test got an explicit `30_000`
+  third-argument timeout. No assertion's expected behaviour changed in
+  either file — confirmed by diffing against `git show HEAD:...` copies of
+  both files before editing.
+  **Real-data result:** `app/map.test.ts` alone, measured directly (ran the
+  pre-fix file under a throwaway copy, not from memory): Vitest's own
+  reported Duration dropped **48.54 s → 10.28 s**, wall-clock `time`
+  **~50.2 s → ~12.2 s** — in line with the spec's "~49 s of redundant work"
+  estimate from the measured ~2.9 s single-build cost × 17 avoidable rebuilds.
+  Verified under the same contention profile that broke GitHub's own runner:
+  two consecutive full-suite runs at `npx vitest run --maxWorkers=2`
+  (approximating a 2-vCPU GitHub Actions runner) both passed **284/284, zero
+  timeouts** (27.81 s then 25.20 s) — previously this exact command was where
+  the Phase 15 push failed on CI. `npm run build` and `npm run test:run`
+  (default config) both clean, 284/284. No change to `buildStreetGraph`'s own
+  algorithm, to Vitest's global `testTimeout`/`pool`/`isolate` config, or to
+  any other test file's fixture sharing (`match/search.test.ts` already
+  builds its own network/index once per file, the correct granularity) — all
+  three explicitly out of scope per the spec. Full spec:
+  [specs/phase-16-fix-flaky-real-data-tests.md](specs/phase-16-fix-flaky-real-data-tests.md).
+  Current priority moves to
+  [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pipeline.md)
+  — the deploy pipeline can now trust its own test gate.
+
+- **2026-09-15 — Investigated: the published site is broken, not just
+  outdated. Two causes found, two specs written.** Prompted by a direct
+  report ("I don't see the differences on GitHub"). Checked git first
+  (`git fetch` + `rev-parse`): local `HEAD` and `origin/main` were identical
+  (`65d12a1`, Phase 15) — every commit and doc file was genuinely pushed, so
+  the report pointed somewhere else. Traced it to the published GitHub Pages
+  site (`https://www.jnvasconcelos.com/circuit-finder/`, the repo's custom
+  domain): fetched it directly and found `index.html` **byte-identical to the
+  repo's own source `index.html`**, referencing `<script src="/src/main.ts">`
+  — raw TypeScript, served by GitHub as `content-type: video/mp2t`, which no
+  browser can execute as a module; `/circuit-finder/assets/` (where a real
+  Vite build's output lives) returned `404`. **The live site has not been
+  running a built application since Phase 12's push (2026-09-12) — the last
+  time the real deploy step succeeded** — not merely stale.
+  **Cause 1**: the GitHub Actions API (public, unauthenticated) showed the
+  `CI + Pages` workflow's one run for the Phase 15 push (`65d12a1`) failed at
+  `npm run test:run`, correctly skipping `npm run build` and the deploy step
+  — exactly the known "flaky under load" test pattern noted in every decision
+  log entry since Phase 10, now confirmed to have a real consequence on
+  GitHub's own (2-vCPU) runner, not just this session's heavily-loaded
+  machine. Full investigation and fix:
+  [specs/phase-16-fix-flaky-real-data-tests.md](specs/phase-16-fix-flaky-real-data-tests.md).
+  **Cause 2, separate and worse**: despite that deploy being correctly
+  skipped, the live site changed anyway roughly 10 minutes later (`last-
+  modified` on the live response matches a `pages build and deployment`
+  system-generated run for the same commit that succeeded unconditionally,
+  distinct from the repo's own `CI + Pages` workflow) — strong evidence the
+  repository's **Pages source setting is "Deploy from a branch"** rather than
+  "GitHub Actions", so GitHub publishes the raw branch content on every push
+  regardless of whether the real build ever runs or passes. Confirmed the
+  `GET /repos/.../pages` API returns `404` (consistent with, though not
+  conclusive proof of, a non-Actions source — full confirmation needs
+  repository-admin access this investigation didn't have). Fix: correct the
+  setting (one-time, manual — no code change makes GitHub stop doing this on
+  its own) plus a permanent, automated post-deploy smoke check so a repeat
+  (this cause or a different one) fails the workflow loudly instead of
+  silently serving broken content again. Full plan:
+  [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pipeline.md).
+  All investigation (API queries, live-site fetches, a throwaway timing
+  script measuring `buildStreetGraph` at ~2.9 s for the full 26 994-way,
+  37 653-node bundled network) was read-only / run-and-discarded, not
+  committed.
 
 - **2026-09-14 — Phase 15 shipped: spatial-quota coarse search, implemented
   as written, no scope changes.** `match/types.ts` gains

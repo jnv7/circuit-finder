@@ -274,16 +274,23 @@ describe('buildStreetGraph — crossing/corridor repair (Phase 9)', () => {
 })
 
 describe('buildStreetGraph (real data)', () => {
-  it('is materially connected: the largest component covers most of the network length', () => {
-    const network = loadStreetNetwork()
-    const sizes = componentLengthsM(network.ways)
-    const totalLengthM = sizes.reduce((s, v) => s + v, 0)
-    const share = sizes[0]! / totalLengthM
-    // eslint-disable-next-line no-console
-    console.log(`largest connected component: ${(share * 100).toFixed(1)}% of network length`)
-    // Phase 7 measured ~88% with endpoint-only repair; Phase 9's crossing/
-    // corridor pass raised it to ~95%. Floor kept comfortably below both so
-    // minor future edits to the bundled data don't make this test flaky.
-    expect(share).toBeGreaterThan(0.9)
-  })
+  it(
+    'is materially connected: the largest component covers most of the network length',
+    () => {
+      const network = loadStreetNetwork()
+      const sizes = componentLengthsM(network.ways)
+      const totalLengthM = sizes.reduce((s, v) => s + v, 0)
+      const share = sizes[0]! / totalLengthM
+      // eslint-disable-next-line no-console
+      console.log(`largest connected component: ${(share * 100).toFixed(1)}% of network length`)
+      // Phase 7 measured ~88% with endpoint-only repair; Phase 9's crossing/
+      // corridor pass raised it to ~95%. Floor kept comfortably below both so
+      // minor future edits to the bundled data don't make this test flaky.
+      expect(share).toBeGreaterThan(0.9)
+    },
+    // Phase 16: measured ~2.9 s to build the full bundled graph on a quiet
+    // machine — a generous, fixed margin over that, not the 5 s global
+    // default, matching every other real-data test in this codebase.
+    30_000,
+  )
 })

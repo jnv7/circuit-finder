@@ -5,6 +5,21 @@ import { makeSavedPlacement } from '../placements'
 import { STORAGE_KEY } from './storage'
 import { LEVELS, proximityColor } from './proximity'
 import { createMapApp } from './map'
+import type { MapAppDeps } from './map'
+import { buildStreetIndex, loadStreetNetwork } from '../streets'
+import { buildStreetGraph } from '../graph'
+
+// Phase 16: the network/index/graph are pure functions of the same static
+// bundled data every test already implicitly depended on — nothing to
+// isolate between tests by rebuilding them 18 times over. Built once here
+// and passed into every createMapApp(...) call below.
+let deps: MapAppDeps
+beforeAll(() => {
+  const network = loadStreetNetwork()
+  const streetIndex = buildStreetIndex(network.ways)
+  const streetGraph = buildStreetGraph(network.ways)
+  deps = { network, streetIndex, streetGraph }
+})
 
 // Stub the search generator so the suggest tests are fast and deterministic —
 // plain Phase 6 coverage suggestions, no loop/best-effort attached.
@@ -78,12 +93,12 @@ const NEAR_STREET_B: [number, number] = [570, 670]
 const FAR_FROM_STREET: [number, number] = [50, 650]
 const OUTSIDE_BBOX: [number, number] = [0, 0]
 
-describe('createMapApp', () => {
+describe('createMapApp', { timeout: 15_000 }, () => {
   it('mounts the map with a street layer and coloured centreline segments, and tears down cleanly', () => {
     const container = document.createElement('div')
     document.body.append(container)
 
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     expect(container.querySelector('.leaflet-container')).not.toBeNull()
     expect(container.querySelector('.rotate-handle')).not.toBeNull()
@@ -102,10 +117,10 @@ describe('createMapApp', () => {
   })
 })
 
-describe('createMapApp — saved placements', () => {
+describe('createMapApp — saved placements', { timeout: 15_000 }, () => {
   it('Save writes the store and the panel then offers Revert', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     expect(panel(container).textContent).toContain('Not saved yet')
     click(container, 'save')
@@ -121,7 +136,7 @@ describe('createMapApp — saved placements', () => {
 
   it('Revert restores the saved placement after an edit', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'save') // saved at scale 1
     const scale = panel(container).querySelector<HTMLInputElement>('[data-role="scale"]')!
@@ -137,7 +152,7 @@ describe('createMapApp — saved placements', () => {
 
   it('traces a route by clicking, and saves it with the placement', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...NEAR_STREET_A)
@@ -158,7 +173,7 @@ describe('createMapApp — saved placements', () => {
 
   it('snaps clicks to the street network and draws the routed path, not a straight line', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...NEAR_STREET_A)
@@ -177,7 +192,7 @@ describe('createMapApp — saved placements', () => {
 
   it('ignores a click with no street nearby, even inside the bundled area', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...FAR_FROM_STREET)
@@ -190,7 +205,7 @@ describe('createMapApp — saved placements', () => {
 
   it('falls back to the raw clicked point outside the bundled bbox', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...OUTSIDE_BBOX)
@@ -203,7 +218,7 @@ describe('createMapApp — saved placements', () => {
 
   it('study view hides the circuit and street layers and strips the panel', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...NEAR_STREET_A)
@@ -224,7 +239,7 @@ describe('createMapApp — saved placements', () => {
 
   it('suggest → results list → use moves the overlay, clear returns to idle', async () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     const paths = () =>
       [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('d')).join('|')
@@ -253,7 +268,7 @@ describe('createMapApp — saved placements', () => {
 
   it('suggest then clear dismisses the list without touching the placement', async () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
     const scaleBefore = panel(container).querySelector<HTMLInputElement>('[data-role="scale"]')!.value
 
     click(container, 'suggest')
@@ -280,7 +295,7 @@ describe('createMapApp — saved placements', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ [circuits[0]!.id]: saved }))
 
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     // The saved placement was applied, so state matches it: no unsaved changes,
     // hence no preview toggle, and the scale input reflects the stored value.
@@ -293,10 +308,10 @@ describe('createMapApp — saved placements', () => {
   })
 })
 
-describe('createMapApp — suggestions (Phase 13: plain coverage list)', () => {
+describe('createMapApp — suggestions (Phase 13: plain coverage list)', { timeout: 15_000 }, () => {
   it('Use this on a suggestion moves the overlay but leaves the route empty', async () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     const paths = () =>
       [...container.querySelectorAll('svg path')].map((p) => p.getAttribute('d')).join('|')
@@ -317,7 +332,7 @@ describe('createMapApp — suggestions (Phase 13: plain coverage list)', () => {
 
   it('hovering a suggestion row previews the outline dashed, clearing on un-hover', async () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'suggest')
     await flush()
@@ -340,7 +355,7 @@ describe('createMapApp — suggestions (Phase 13: plain coverage list)', () => {
   })
 })
 
-describe('createMapApp — manual trace gaps (Phase 10)', () => {
+describe('createMapApp — manual trace gaps (Phase 10)', { timeout: 15_000 }, () => {
   const anyGapDrawn = (container: HTMLElement) =>
     [...container.querySelectorAll('svg path')].some(
       (p) => p.getAttribute('stroke') === '#c62828' && p.getAttribute('d') !== 'M0 0',
@@ -348,7 +363,7 @@ describe('createMapApp — manual trace gaps (Phase 10)', () => {
 
   it('a fully-connected manual trace draws no red gap line at all', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...NEAR_STREET_A)
@@ -361,10 +376,10 @@ describe('createMapApp — manual trace gaps (Phase 10)', () => {
   })
 })
 
-describe('createMapApp — corner skeleton (Phase 14)', () => {
+describe('createMapApp — corner skeleton (Phase 14)', { timeout: 15_000 }, () => {
   it('Find corner anchors draws draggable markers and an honest summary', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     expect(panel(container).querySelector('[data-role="skeleton-build"]')).not.toBeNull()
     click(container, 'skeleton-build')
@@ -381,7 +396,7 @@ describe('createMapApp — corner skeleton (Phase 14)', () => {
 
   it('Use as route commits the skeleton as the traced route and clears it', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'skeleton-build')
     click(container, 'skeleton-commit')
@@ -397,7 +412,7 @@ describe('createMapApp — corner skeleton (Phase 14)', () => {
 
   it('Dismiss clears the skeleton without touching an existing route', () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'trace')
     mapClick(container, ...NEAR_STREET_A)
@@ -417,7 +432,7 @@ describe('createMapApp — corner skeleton (Phase 14)', () => {
 
   it('building a skeleton clears an active suggestion preview, and vice versa', async () => {
     const container = mount()
-    const app = createMapApp(container, circuits)
+    const app = createMapApp(container, circuits, deps)
 
     click(container, 'suggest')
     await flush()
