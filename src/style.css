@@ -279,6 +279,10 @@ body,
   border-color: #c62828;
 }
 
+.skeleton-marker--retrace {
+  border-color: #f9a825;
+}
+
 .skeleton-marker:active {
   cursor: grabbing;
 }

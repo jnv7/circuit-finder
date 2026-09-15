@@ -90,7 +90,7 @@ describe('expandRouteWithGaps', () => {
     const waypoints: Point[] = [[0, 0], [10000, 10000]]
     const { points, legs } = expandRouteWithGaps(waypoints, g)
     expect(points).toEqual([[0, 0], [10000, 10000]])
-    expect(legs).toEqual([{ points: [[0, 0], [10000, 10000]], real: false }])
+    expect(legs).toEqual([{ points: [[0, 0], [10000, 10000]], real: false, edgeIds: [] }])
   })
 
   it('measures the real routed distance, not the straight-line waypoint distance', () => {
@@ -116,6 +116,23 @@ describe('expandRouteWithGaps', () => {
     expect(legs[1]!.real).toBe(false)
     expect(legs[1]!.points).toEqual([[100, 0], [10000, 0]])
     expect(legs[2]!.real).toBe(true)
+  })
+
+  it('a real leg carries the exact edgeIds shortestPath returned; a gap leg carries none', () => {
+    const waypoints: Point[] = [[-100, 0], [0, 100], [10000, 10000]]
+    const { legs } = expandRouteWithGaps(waypoints, graph)
+    expect(legs).toHaveLength(2)
+
+    const expectedFirst = graph.shortestPath(
+      graph.nearestPointM([-100, 0], 1)!.node,
+      graph.nearestPointM([0, 100], 1)!.node,
+    )!
+    expect(legs[0]!.real).toBe(true)
+    expect(legs[0]!.edgeIds).toEqual(expectedFirst.edgeIds)
+    expect(legs[0]!.edgeIds.length).toBeGreaterThan(0)
+
+    expect(legs[1]!.real).toBe(false)
+    expect(legs[1]!.edgeIds).toEqual([])
   })
 
   it('resolves a waypoint to the street it actually sits on, not a nearer vertex on an unrelated street', () => {

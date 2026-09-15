@@ -39,8 +39,11 @@ export type RouteStats = {
 }
 
 /** One stretch of a joined route: a real routed street segment, or — where
- *  the network didn't cooperate — a straight line flagged `real: false`. */
-export type RouteLeg = { points: Point[]; real: boolean }
+ *  the network didn't cooperate — a straight line flagged `real: false`.
+ *  `edgeIds` are the graph edges walked (Phase 20: lets a caller detect when
+ *  two legs reuse the same street) — empty for a gap leg, which walks no
+ *  real edge at all. */
+export type RouteLeg = { points: Point[]; real: boolean; edgeIds: readonly number[] }
 
 /** Length of the traced route (open polyline). */
 export function routeLengthM(metricRoute: readonly Point[]): number {
@@ -69,7 +72,7 @@ export function joinWaypoints(
     const toNode = nodes[i]!
     const routed = fromNode !== null && toNode !== null ? graph.shortestPath(fromNode, toNode) : null
     const legPoints = routed ? routed.points : [a, b]
-    legs.push({ points: legPoints, real: routed !== null })
+    legs.push({ points: legPoints, real: routed !== null, edgeIds: routed?.edgeIds ?? [] })
     if (points.length === 0) points.push(legPoints[0]!)
     for (let j = 1; j < legPoints.length; j++) points.push(legPoints[j]!)
   }

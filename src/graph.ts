@@ -110,6 +110,14 @@ export type StreetGraph = {
     from: NodeId,
     to: NodeId,
   ): { lengthM: number; points: Point[]; edgeIds: readonly number[] } | null
+  /**
+   * Length (m) of one internal edge, addressed by the same opaque id
+   * `shortestPath`'s `edgeIds` returns — lets a caller that already
+   * collected edge ids from two different paths (Phase 20's retraced-length
+   * detection) attribute shared distance without needing its own copy of the
+   * street geometry.
+   */
+  edgeLengthM(edgeId: number): number
 }
 
 type EdgeRecord = { a: NodeId; b: NodeId; points: Point[]; lengthM: number }
@@ -746,6 +754,7 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
     nearestPointM,
     nearestAlignedPointM,
     shortestPath,
+    edgeLengthM: (edgeId) => edges[edgeId]!.lengthM,
   }
 }
 

@@ -6,25 +6,54 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**The published site was found broken on 2026-09-15 and both causes are now
-fixed.** Not missing Phase 13-15's changes, but not running a built
-application at all — see the decision log below for the full investigation
-and both fixes:
+**Stability confirmed, independently, 2026-09-15**: `npm run test:run` is
+green with no timeouts under simulated CI load (`--maxWorkers=2`, run
+twice); the live site (`https://www.jnvasconcelos.com/circuit-finder/`) is
+confirmed serving a real Vite build (`/assets/index-*.js`/`.css`), and the
+latest `CI + Pages` run on GitHub is green. Phase 16 and 17 (previous entry)
+closed the stability gate the product direction was waiting on.
 
-- [specs/phase-16-fix-flaky-real-data-tests.md](specs/phase-16-fix-flaky-real-data-tests.md)
-  — **done**: the `CI + Pages` workflow's `npm run test:run` step no longer
-  fails under load, so it stops blocking the real build+deploy.
-- [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pipeline.md)
-  — **done**: the repository's Pages source setting corrected to "GitHub
-  Actions" (was bypassing the workflow, publishing raw branch content
-  regardless of whether the real build ever ran), plus a permanent
-  post-deploy smoke check added so a repeat of this — this cause or a
-  different one — fails the workflow loudly instead of silently serving
-  broken content again.
+**Revised 2026-09-15, same day, on a direct user finding: a real correctness
+problem in Phase 14's skeletons outranks adding more circuits.** A user
+observed that a skeleton's honest-looking numbers can hide a **comb
+pattern** — real, connected streets, but mostly retracing the same ground
+rather than tracing new distance. Measured, not assumed: for the three
+bundled circuits' own top placement, checking every leg pair's underlying
+street edges found **hungaroring's top candidate overlaps on 10 of 10
+possible adjacent leg pairs** (up to 23 shared edges between two legs
+alone); silverstone 3 of 7, catalunya 5 of 8 including two non-adjacent legs
+sharing 36 edges. `resolveLandmark` picks each landmark's best real street
+independently, with no awareness of what a neighbour already claimed —
+exactly Phase 8's old `RoutedLoop.simple` problem, recurring because Phase
+14 never re-added that detection when it replaced Phase 8's mechanism.
+Batch-adding ~21 more circuits onto a skeleton-builder with this defect
+undisclosed would scale a hidden correctness problem 8×, not just add
+content — fixing visibility comes first:
 
-No phase spec is currently queued next; pick from *Later* below or new
-feedback once the next push confirms the live site is actually serving the
-built app again.
+1. [specs/phase-20-detect-skeleton-backtracking.md](specs/phase-20-detect-skeleton-backtracking.md)
+   — **done 2026-09-15**: skeletons now expose `retracedM`, split honestly
+   across the landmarks that cause it, so the drag-to-fix design Phase 14
+   promised ("the computer flags the 2-3 points that need it") actually can.
+   Real figures for the three bundled circuits' top candidates: hungaroring
+   1434 m retraced (of 6149 m — 23%), silverstone 361 m (of 6084 m), catalunya
+   860 m (of 5135 m).
+2. [specs/phase-21-avoid-skeleton-backtracking.md](specs/phase-21-avoid-skeleton-backtracking.md)
+   — **rejected 2026-09-15**: prototyped exactly as sketched, measured
+   against real data, found to structurally never change anything (see the
+   spec's own outcome note and the decision log entry below for why). Not
+   implemented; no automatic repair exists. Phase 20's honest disclosure is,
+   for now, the whole of this problem's fix — the user drags the flagged
+   landmarks by hand.
+3. **Current priority moves to** [specs/phase-18-gpx-export.md](specs/phase-18-gpx-export.md)
+   — a locked, ready spec, quick win, independent of the skeleton work:
+   export the traced route as a `.gpx` file.
+4. [specs/phase-19-circuit-extraction-tooling.md](specs/phase-19-circuit-extraction-tooling.md)
+   — the enabler for the full calendar (Phase 20 alone already lets new
+   circuits' skeletons be honestly labelled, so this no longer waits on 21):
+   turns the manual, one-off OSM-extraction pipeline into a repeatable,
+   validated tool.
+5. **Batch-add the rest of the calendar** using Phase 19's tool — not yet
+   spec'd as individual phases; see the classified roadmap below.
 
 Phase 15 shipped 2026-09-14: spatial-quota coarse search — replaces
 `coarseKeep`'s flat top-16-by-score selection with one-winner-per-macro-cell
@@ -430,35 +459,188 @@ Spec: [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pi
   `dist/index.html` from a clean `npm run build` — passes, no false
   positive.
 
-### Later — not scheduled
+### Later — classified by cost and benefit (2026-09-15)
 
-- A saved-placement "repository": more than one saved attempt per circuit, with
-  names, notes, and a list to load from (Phase 4 ships one per circuit only).
-- File export/import of a saved placement — a self-identifying versioned JSON
-  wrapper, import-as-copy — for hand-carrying a placement between machines
-  (dropped from Phase 4).
-- Free the map: any location, pan/zoom, place search.
-- Street network beyond the bundled Porto box: either a larger bundled asset or
-  an on-demand "load streets for this area" button that fetches Overpass for the
-  current view and caches it. Needed before the map can be freed *and* before
-  Phase 6's search can suggest placements outside Porto.
-- A freeform, shape-first graph search (bending a loop street-by-street to fit
-  the circuit, rather than validating poses Phase 6's rigid search already
-  found) — a later item if Phase 8's simpler validate-what-Phase-6-found
-  approach proves too limited on real Porto data.
-- Editable circuit scale target by distance instead of 1:1 (composes with the
-  Phase 6 search to add a scale degree of freedom).
-- Matching a freehand sketch / the user's traced route against the network to
-  find circuit-like loops (reuses the Phase 6 objective functions).
-- More circuits; auto-select the circuit for the current race weekend.
-- GPX export of the traced route.
-- Cache Phase 6 search results (keyed by circuit + scale, and invalidated if
-  either changes) so **Suggest placements** does not always recompute from
-  scratch — clicking it again for the same circuit/scale would be instant.
+Not a commitment list — a rated menu, reassessed as real usage (and the
+calendar expansion below) surfaces what actually matters. **Cost** is
+implementation + verification effort at this codebase's own standard (real
+data checked, not assumed); **benefit** is impact against VISION.md's actual
+goal, not effort spent.
+
+#### Recommended next (high benefit, cost paid off by the F1-calendar goal)
+
+| Item | Cost | Benefit | Why |
+| --- | --- | --- | --- |
+| Full F1 calendar (~21 more circuits) via Phase 19's tool | **High** — heterogeneous: permanent circuits should be straightforward per-circuit runs of the tool; street circuits (Monaco, and likely several others — Baku, Singapore, Jeddah, Las Vegas, Miami all share Monaco's "mapped as ordinary streets, not a clean raceway relation" risk) may each need real one-off investigation, or may simply not be cleanly extractable, the same honest outcome Monaco already hit | **Highest** — this is VISION.md's opening scenario ("during the Madrid Grand Prix week, run something shaped like the Madrid circuit") and the explicit stated priority | Start with a verified list of the current season's circuits (a fresh check, not assumed from training data) and split into an easy batch (permanent/park circuits) shipped first, and a street-circuit batch tackled second, expecting some to end up documented-and-dropped like Monaco rather than forced |
+| Validate Phase 6/12/14/15's tuned constants against shape diversity | **Low** — no new code, just run 2-3 deliberately extreme new circuits (a very tight one, a long sweeping one, a long-straight street one) through the existing pipeline and read the honest numbers, the same "measure, don't assume" discipline this whole matching engine was built with | **Medium-high** — every constant in `match/` was tuned only against 3 circuits in a narrow 4.3-5.9 km band; Monaco-scale (~3.3 km, tight) and Spa-scale (~7 km, sweeping) are genuinely different regimes | Fold into the *first few* circuit additions (step 3 above), not a separate phase — catches a tuning problem while only a handful of circuits are affected, not after all ~24 are in |
+
+#### Medium-term (real value, not blocking the calendar goal)
+
+| Item | Cost | Benefit | Why |
+| --- | --- | --- | --- |
+| A saved-placement "repository" (multiple named attempts per circuit) | Medium — schema version bump, a list UI | Medium, rises with circuit count — more circuits plausibly means more "which spot did I like for Spa again?" moments | Worth revisiting once the calendar makes one-slot-per-circuit feel cramped, not before |
+| JSON export/import of a saved placement | Low-medium — a versioned wrapper format, import-as-copy (already scoped once, dropped from Phase 4) | Medium — hand-carrying a placement between machines/people | Pairs naturally with GPX export (Phase 18) as "get your data out of the browser," but a different format/use case, not bundled together |
+| Short-lived caching of recently-computed results (search results, skeleton builds) keyed by their inputs | Low — a memoisation layer, invalidated on input change | Medium — explicitly requested (2026-09-15): avoid recomputing something just computed (e.g. re-opening the same circuit's suggestion list, rebuilding the same skeleton) | Promoted from "cheap, do opportunistically" to a real next item per direct request — see below |
+
+#### Low priority / speculative (real cost, narrow or unclear benefit today)
+
+| Item | Cost | Benefit | Why |
+| --- | --- | --- | --- |
+| Free the map (any location, pan/zoom, place search) | **High** — needs street data beyond the bundled Porto bbox first (below), plus real UI work | Low **for this product's stated scope** — VISION.md is about Porto specifically; only matters if the goal ever becomes "any city" | Don't start without an explicit scope change from the user — this is a different product shape, not a bigger version of the same one |
+| Street network beyond the bundled Porto box | **High** — either a much larger bundled asset (the existing 9.5×5.3 km box is already ~575 KB gzipped-ish; a whole-city-or-bigger box could blow past the size budget that already forced a bbox reshape once) or a runtime Overpass fetch (a real architecture change — VISION.md's "no runtime OSM fetch" principle would need deliberate reconsideration, not a quiet exception) | Low unless "free the map" is actually wanted | Blocked on the same product-scope question as "free the map" — evaluate together, not separately |
+| Editable circuit scale target by distance (e.g. "give me a 5 km loop even though the circuit is 7 km") | Medium — a new degree of freedom in the Phase 6 search | Low-medium — a real but niche need; most of this app's value is already in "same scale as the real thing" | Only worth it if real usage shows people actually wanting a *different* scale often, not hypothetically |
+| Matching a freehand sketch / the user's own traced route against the network | Medium-high — reuses Phase 6's objective functions but is a distinct feature, its own UX | Low — unclear who this is for beyond a novelty; the corner-anchored workflow (Phase 14) already gives the user direct, guided control over a real route | Genuinely speculative; would want a concrete use case before spending the effort |
+
+#### Superseded — remove from consideration
+
+- **A freeform, shape-first graph search** (bending a loop street-by-street
+  to fit the circuit, instead of validating poses a rigid search already
+  found) — this was Phase 8's own noted fallback if its simpler approach
+  proved too limited. It did (see the 2026-09-13 review), but Phase 14's
+  corner-anchored, human-adjustable placement already *is* a shape-first,
+  street-bending approach — just with a human doing the final adjustment
+  instead of a fully automatic search. Re-attempting a fully-automatic
+  version of the same idea would be re-opening a problem this codebase's own
+  history (Phases 6-14) already worked through once; not worth reopening
+  without a specific, evidenced reason Phase 14's result is insufficient.
 
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-15 — Phase 21 rejected: the sketched local repair pass was
+  prototyped, measured against real data, and found to structurally never
+  change anything — not implemented.** Followed the discipline the spec
+  itself demanded: prototype before committing, measure, and say so
+  honestly if it doesn't help. Implemented exactly the spec's recommended
+  approach — for each landmark with `retraceM > 0`, re-run
+  `nearestAlignedPointM` excluding every edge id used by the loop's *other*
+  legs (not the two touching this landmark), and move it there via the
+  existing `moveLandmark` if a different node came back — plus the one
+  `StreetGraph` addition it needed (`excludeEdgeIds` on
+  `nearestAlignedPointM`). Measured before/after `retracedM` for all three
+  bundled circuits' top candidates: **zero change, bit-for-bit** —
+  hungaroring 1434 m, silverstone 361 m, catalunya 860 m, identical before
+  and after a bounded 3-pass repair sweep. Diagnosed why, not just that:
+  logged every landmark's own current node against what the
+  exclusion-aware search returned for hungaroring (10 landmarks) and
+  catalunya (9, including the flagged non-adjacent 2↔6 pair) — **all 19**
+  came back at `distanceM = 0`, the landmark's own existing point, every
+  time. The reason is structural, not incidental: a landmark's
+  currently-resolved point is *by definition* on an edge that became part
+  of one of its own two touching legs (that's what "resolved" means — the
+  best-aligned point, which then gets routed to/from its neighbours) — so
+  under "exclude every edge used by legs other than mine," that point can
+  never be excluded, and a plain nearest-match search re-finds the exact
+  same already-globally-nearest point every single time. The design
+  cannot ever move a landmark, on any circuit, not merely "didn't help on
+  these three." A repair that could actually work would need to look
+  further than the landmark's own immediate best match — e.g. resolving
+  landmarks with some awareness of neighbours' claims *during* `buildLoop`
+  itself, rather than post-hoc local re-search after the fact — a real
+  redesign of `resolveLandmark`, not a bounded local patch, and exactly the
+  "much bigger, riskier idea" the spec itself said not to reach for without
+  first confirming the local version wasn't enough. It demonstrably isn't;
+  no such redesign is scoped or planned. All prototype code (the
+  `excludeEdgeIds` graph addition, `repairLandmark`/`repairSkeletonLoop`,
+  and the measurement test) was added, run, and then fully removed — not
+  merged — per this project's own rule against shipping code that doesn't
+  work. `docs/specs/phase-21-avoid-skeleton-backtracking.md` marked
+  `rejected` with this finding recorded at the top; the original sketch
+  kept below it as the historical record of what was tried. "Current
+  priority" moves on to Phase 18 (gpx export); Phase 19 (and the calendar
+  batch after it) no longer wait on 21, since Phase 20 alone already gives
+  new circuits' skeletons honest labelling.
+
+- **2026-09-15 — Phase 20 shipped: skeletons now expose and display
+  retraced (backtracked) length, per loop and per landmark.** Implements
+  [specs/phase-20-detect-skeleton-backtracking.md](specs/phase-20-detect-skeleton-backtracking.md),
+  closing the visibility gap the same-day investigation below found.
+  `RouteLeg` (`app/trace.ts`) gains `edgeIds`, threaded through from
+  `graph.shortestPath` (already computed, previously discarded by
+  `joinWaypoints`). `match/landmarks.ts`'s new `computeRetraced` sums, for
+  every edge id used by more than one leg in the loop, every use beyond the
+  first — an honest "retraced, not new ground" total (`SkeletonLoop
+  .retracedM`) — and splits each shared edge's length evenly across every
+  leg that walks it, then evenly again across the two landmarks bounding
+  each leg (`LandmarkAnchor.retraceM`), so there is no arbitrary "which use
+  was the retrace" choice on a loop that has no natural start. One
+  deliberate deviation from the spec's suggested plumbing: rather than
+  reconstructing per-edge length from a leg's own points (geometrically
+  fragile — a leg's points carry no recoverable per-edge boundary once
+  `shortestPath` has concatenated them), `StreetGraph` gained one new
+  method, `edgeLengthM(edgeId)` — a trivial, exact lookup into data the
+  graph already holds privately, versus a heuristic that would have to
+  guess edge boundaries from geometry. The spec's own contract note
+  ("the contract is the formula above, not the exact plumbing") covers this
+  choice. Real figures for the three bundled circuits' top candidates,
+  confirming the investigation's finding stays detected: hungaroring 1434 m
+  retraced of 6149 m (23%, all 10 landmarks flagged — matches the earlier
+  10-of-10 adjacent-pair finding), silverstone 361 m of 6084 m, catalunya
+  860 m of 5135 m. Verified in the browser against Hungaroring's own top
+  suggested placement: the summary reads "10 corners · 6.15 km (1.43 km
+  retraced) · 0 gaps" and every landmark marker renders in the new amber
+  `skeleton-marker--retrace` style. Phase 21 (automatic avoidance) was
+  prototyped against these same numbers immediately after — see the entry
+  above, dated the same day: it doesn't work, and was rejected rather than
+  shipped. "Current priority" moved to Phase 18 (gpx export), the next
+  locked, ready spec.
+
+- **2026-09-15 — Investigated: Phase 14 skeletons can hide a "comb"
+  backtracking pattern behind honest-looking numbers. Two specs written,
+  one flagged as needing prototyping before it's real.** Prompted by a
+  direct, precisely-reasoned user report: if a circuit's finish straight
+  were placed perpendicular across many closely-spaced parallel streets that
+  never touch, each sample point would find *some* nearby well-aligned
+  street, scoring high coverage — "só que não conseguia correr." Checked
+  whether Phase 14's landmark-based skeletons have the equivalent problem by
+  capturing `shortestPath`'s already-computed `edgeIds` (currently discarded
+  by `joinWaypoints`) for every leg of the three bundled circuits' top
+  candidate and checking for reuse across legs. **Confirmed, severely**:
+  hungaroring's top skeleton (10 corners) overlaps on **10 of 10** possible
+  adjacent leg pairs, up to 23 shared edges between two legs alone;
+  silverstone 3 of 7 pairs; catalunya 5 of 8, including two *non-adjacent*
+  legs sharing 36 edges. This is the same failure Phase 8's `RoutedLoop
+  .simple` flag existed to catch and report ("never rejected on its own,
+  only reported") — Phase 14 never re-added an equivalent when it replaced
+  Phase 8's mechanism, so today's skeleton summary ("10 corners · 6.15 km ·
+  0 gaps") gives no hint this is happening, breaking Phase 14's own design
+  promise ("the computer flags the 2-3 points that need fixing") since
+  nothing currently points at which corner is the problem.
+  Root cause: `resolveLandmark` picks each landmark's best real street
+  **independently**, unaware of what an adjacent landmark already claimed —
+  structurally the same class of problem Phase 11 solved for the old
+  60-sample system, recurring at the landmark level because nothing
+  equivalent was carried forward.
+  Decision: split the fix into visibility (real, scoped, spec'd now) and
+  avoidance (sketched, explicitly *not* locked, since — per this session's
+  own established discipline after three disproved tuning hypotheses on
+  2026-09-14 — an unvalidated algorithmic fix should not be spec'd with false
+  confidence).
+  [specs/phase-20-detect-skeleton-backtracking.md](specs/phase-20-detect-skeleton-backtracking.md)
+  adds `retracedM`/`retraceM` (total and per-landmark retraced length,
+  computed from `edgeIds` overlap) and a third marker style so the user can
+  see and drag exactly the right corner.
+  [specs/phase-21-avoid-skeleton-backtracking.md](specs/phase-21-avoid-skeleton-backtracking.md)
+  sketches a bounded local repair pass (re-resolve a retracing landmark
+  excluding edges its neighbours already used) but is explicit that this
+  needs prototyping against hungaroring's worst case before it's trustworthy
+  — `StreetGraph` has no "search excluding these edges" primitive yet, and
+  whether local re-resolution actually finds a better street (versus the
+  overlap being the *only* real option in a dense grid) is an open, testable
+  question, not assumed.
+  "Current priority" reordered: Phase 20 now precedes the F1-calendar work
+  (Phase 18/19) — batch-adding ~21 more circuits onto an undisclosed
+  correctness problem would scale it 8×, not just add content.
+  Also per direct request this session: removed "auto-select the circuit for
+  the current race weekend" from the roadmap (not wanted); confirmed "free
+  the map" / street data beyond Porto stays out of scope (no city-expansion
+  intent for now, consistent with their existing "blocked on an explicit
+  scope change" classification); promoted short-lived result caching
+  (search results, skeleton builds) from an opportunistic nice-to-have to a
+  real classified item — avoid recomputing something just computed.
+  All investigation (the throwaway `edgeIds`-overlap check) was run and
+  discarded, not committed.
 
 - **2026-09-15 — Phase 17 shipped: Pages source corrected, permanent
   post-deploy smoke check added.** Implements

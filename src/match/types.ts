@@ -84,6 +84,10 @@ export type LandmarkAnchor = {
   landmark: Landmark
   point: Point | null
   node: NodeId | null
+  /** Phase 20: this landmark's own share of the loop's retraced length — the
+   *  sum of repeated-edge length across its two adjacent legs, split evenly
+   *  with the landmark at the other end of each. */
+  retraceM: number
 }
 
 /** The closed sequence of legs connecting consecutive landmark anchors, in
@@ -96,6 +100,9 @@ export type SkeletonLoop = {
   meanDeviationM: number
   maxDeviationM: number
   gapCount: number
+  /** Phase 20: total length counted more than once across the loop's legs —
+   *  real, connected street, but retraced rather than new ground. */
+  retracedM: number
   /** The candidate-placed (unsnapped) landmark corner points, in landmark
    *  order — the deviation reference ring. Kept on the loop (beyond the
    *  spec's original sketch) so `moveLandmark` can recompute totals from the

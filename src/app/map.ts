@@ -285,6 +285,7 @@ export function createMapApp(
           stats: {
             cornerCount: skeleton.anchors.length,
             lengthM: skeleton.lengthM,
+            retracedM: skeleton.retracedM,
             gapCount: skeleton.gapCount,
           },
         }
@@ -387,7 +388,11 @@ export function createMapApp(
           draggable: true,
           keyboard: false,
           icon: L.divIcon({
-            className: anchor.point ? 'skeleton-marker' : 'skeleton-marker skeleton-marker--gap',
+            className: !anchor.point
+              ? 'skeleton-marker skeleton-marker--gap'
+              : anchor.retraceM > 0
+                ? 'skeleton-marker skeleton-marker--retrace'
+                : 'skeleton-marker',
             iconSize: [14, 14],
           }),
           zIndexOffset: 900,

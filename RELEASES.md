@@ -8,6 +8,26 @@ Newest release first.
 
 ---
 
+## 0.13.0 — Corner anchors now tell you when they double back on themselves (2026-09-15)
+
+**"Find corner anchors" can build a skeleton that looks clean — a short
+gap count, an honest-looking length — while secretly sending you up a
+street and back down it before moving on, instead of tracing new ground.**
+That's now visible instead of hidden: the summary line gains a
+"(X.XX km retraced)" figure whenever it happens, and any corner marker
+involved in one turns a distinct amber, alongside the existing purple
+(placed on a real street) and red (a gap) — so you know exactly which
+point to drag to try to fix it.
+
+For example, Hungaroring's own best suggested placement today shows
+"10 corners · 6.15 km (1.43 km retraced) · 0 gaps" — nearly a quarter of
+that skeleton's length is backtracking, on every single corner. Silverstone
+and Catalunya's top candidates have smaller but real amounts too. This
+doesn't change what a skeleton *is* or how it's built — only what you can
+now see about it.
+
+---
+
 ## 0.12.2 — The live site is back, and can't silently break like this again (2026-09-15)
 
 **If you've visited circuit-finder recently and it looked broken or

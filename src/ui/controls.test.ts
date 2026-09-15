@@ -386,7 +386,10 @@ describe('renderControls — corner skeleton section', () => {
   it('built: shows the corner/length/gap summary and both actions', () => {
     const html = renderControls(
       view({
-        skeleton: { phase: 'built', stats: { cornerCount: 14, lengthM: 4230, gapCount: 2 } },
+        skeleton: {
+          phase: 'built',
+          stats: { cornerCount: 14, lengthM: 4230, retracedM: 0, gapCount: 2 },
+        },
       }),
     )
     expect(html).toContain('14 corners')
@@ -399,13 +402,40 @@ describe('renderControls — corner skeleton section', () => {
   it('built: singular wording for exactly one corner or gap', () => {
     const html = renderControls(
       view({
-        skeleton: { phase: 'built', stats: { cornerCount: 1, lengthM: 500, gapCount: 1 } },
+        skeleton: {
+          phase: 'built',
+          stats: { cornerCount: 1, lengthM: 500, retracedM: 0, gapCount: 1 },
+        },
       }),
     )
     expect(html).toContain('1 corner ')
     expect(html).toContain('1 gap')
     expect(html).not.toContain('1 corners')
     expect(html).not.toContain('1 gaps')
+  })
+
+  it('built: omits the retraced clause when retracedM is ~0', () => {
+    const html = renderControls(
+      view({
+        skeleton: {
+          phase: 'built',
+          stats: { cornerCount: 10, lengthM: 6000, retracedM: 0.2, gapCount: 0 },
+        },
+      }),
+    )
+    expect(html).not.toContain('retraced')
+  })
+
+  it('built: includes the retraced clause when retracedM is non-trivial', () => {
+    const html = renderControls(
+      view({
+        skeleton: {
+          phase: 'built',
+          stats: { cornerCount: 10, lengthM: 6150, retracedM: 890, gapCount: 0 },
+        },
+      }),
+    )
+    expect(html).toContain(`(${formatDistance(890)} retraced)`)
   })
 })
 
@@ -422,7 +452,12 @@ describe('bind — corner skeleton section', () => {
 
     const built = document.createElement('div')
     built.innerHTML = renderControls(
-      view({ skeleton: { phase: 'built', stats: { cornerCount: 10, lengthM: 3000, gapCount: 0 } } }),
+      view({
+        skeleton: {
+          phase: 'built',
+          stats: { cornerCount: 10, lengthM: 3000, retracedM: 0, gapCount: 0 },
+        },
+      }),
     )
     const h2 = noopHandlers()
     bind(built, h2)

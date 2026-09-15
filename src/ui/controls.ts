@@ -41,7 +41,7 @@ export type ControlsView = {
 export type SkeletonView = {
   phase: 'idle' | 'built'
   /** Only present when `phase === 'built'`. */
-  stats?: { cornerCount: number; lengthM: number; gapCount: number }
+  stats?: { cornerCount: number; lengthM: number; retracedM: number; gapCount: number }
 }
 
 export type SuggestView = {
@@ -288,11 +288,12 @@ function renderSkeletonSection(view: ControlsView): string {
   const { skeleton } = view
 
   if (skeleton.phase === 'built' && skeleton.stats) {
-    const { cornerCount, lengthM, gapCount } = skeleton.stats
+    const { cornerCount, lengthM, retracedM, gapCount } = skeleton.stats
+    const retraceLabel = retracedM > 0.5 ? ` (${formatDistance(retracedM)} retraced)` : ''
     return `
       <div class="skeleton" data-role="skeleton-panel">
         <p class="skeleton__summary" data-role="skeleton-summary">
-          ${cornerCount} corner${cornerCount === 1 ? '' : 's'} · ${formatDistance(lengthM)} · ${gapCount} gap${gapCount === 1 ? '' : 's'}
+          ${cornerCount} corner${cornerCount === 1 ? '' : 's'} · ${formatDistance(lengthM)}${retraceLabel} · ${gapCount} gap${gapCount === 1 ? '' : 's'}
         </p>
         <div class="skeleton__actions">
           <button type="button" data-role="skeleton-commit">Use as route</button>

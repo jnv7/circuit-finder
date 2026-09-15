@@ -115,6 +115,9 @@ describe('buildSkeletonLoop', () => {
     expect(loop.gapCount).toBe(0)
     expect(loop.legs.every((l) => l.real)).toBe(true)
     expect(loop.lengthM).toBeCloseTo(1400, 0) // 2 * (400 + 300)
+    // Four distinct edges, each walked exactly once going round — no backtrack.
+    expect(loop.retracedM).toBe(0)
+    expect(loop.anchors.every((a) => a.retraceM === 0)).toBe(true)
   })
 
   it('never throws when part of the network is missing, and reports honest gaps', () => {
@@ -182,6 +185,59 @@ describe('moveLandmark', () => {
   })
 })
 
+describe('retracedM (Phase 20: detecting backtracking)', () => {
+  it('two landmarks on the same dead-end street force an honest there-and-back', () => {
+    // The only route between the two landmarks is the street itself, walked
+    // once each way — exactly Phase 11's old "there-and-back" problem,
+    // recurring at the landmark level.
+    const street: Street = [
+      [0, 0],
+      [100, 0],
+    ]
+    const graph = buildStreetGraph([street])
+    const landmarks: Landmark[] = [landmarkAt([0, 0], [1, 0]), landmarkAt([100, 0], [1, 0])]
+    const loop = buildSkeletonLoop(landmarks, identity, 1, graph)
+
+    expect(loop.gapCount).toBe(0)
+    expect(loop.legs[0]!.edgeIds).toEqual(loop.legs[1]!.edgeIds) // same single edge, both directions
+    expect(loop.retracedM).toBeCloseTo(100, 5) // the one edge, walked one time beyond the first
+    expect(loop.anchors[0]!.retraceM).toBeCloseTo(50, 5) // split evenly between both ends
+    expect(loop.anchors[1]!.retraceM).toBeCloseTo(50, 5)
+  })
+
+  it('dragging the landmark responsible for a backtrack onto the real corner drops retracedM to 0', () => {
+    // Same rectangle as above, plus a dead-end spur off the bottom street's
+    // interior. Landmark0 is (wrongly) placed at the spur's tip instead of
+    // the real bottom-left corner, forcing its two adjacent legs to detour
+    // up and back down the spur — exactly the "drag the flagged marker"
+    // scenario Phase 20 exists to surface.
+    const spur: Street = [
+      [1000, 650],
+      [1000, 600],
+    ]
+    const graph = buildStreetGraph([bottom, right, top, left, spur])
+    const spurLandmarks: Landmark[] = [
+      landmarkAt([0, -200], [0, 1]), // -> placed (1000, 600): the spur tip, not the real corner
+      rectLandmarks[1]!,
+      rectLandmarks[2]!,
+      rectLandmarks[3]!,
+    ]
+    const loop = buildSkeletonLoop(spurLandmarks, rectCandidate, 1, graph)
+    expect(loop.gapCount).toBe(0)
+    expect(loop.retracedM).toBeCloseTo(50, 5) // the spur, walked up and back down
+    expect(loop.anchors[0]!.retraceM).toBeGreaterThan(0)
+
+    // Drag landmark0 onto the real corner instead — the same
+    // `graph.nearestPointM` snap a drop on the map would resolve to.
+    const corner = graph.nearestPointM([800, 650], 5)!
+    const moved = moveLandmark(loop, 0, corner.point, corner.node, graph)
+
+    expect(moved.gapCount).toBe(0)
+    expect(moved.retracedM).toBeCloseTo(0, 5)
+    expect(moved.anchors.every((a) => a.retraceM < 1)).toBe(true)
+  })
+})
+
 describe('buildLandmarks + buildSkeletonLoop — real Porto data', () => {
   it(
     'completes for all three bundled circuits at their own best candidate placement and logs corner/gap/length numbers',
@@ -227,12 +283,18 @@ describe('buildLandmarks + buildSkeletonLoop — real Porto data', () => {
           `buildSkeletonLoop (real data) — ${circuit.id}: ${elapsedMs.toFixed(0)} ms, ` +
             `${landmarks.length} corners, circuit length ${targetLengthM.toFixed(0)} m, ` +
             `skeleton length ${loop.lengthM.toFixed(0)} m (${ratio.toFixed(2)}x), ` +
+            `${loop.retracedM.toFixed(0)} m retraced, ` +
             `${loop.gapCount} gaps, mean dev ${loop.meanDeviationM.toFixed(0)} m, ` +
             `max dev ${loop.maxDeviationM.toFixed(0)} m`,
         )
 
         expect(landmarks.length).toBeGreaterThan(0)
         expect(loop.legs.length).toBe(landmarks.length)
+        // Regression guard for this phase's own headline finding: hungaroring's
+        // top candidate is the confirmed worst case (10 of 10 adjacent leg
+        // pairs overlap) — a claim about detection staying detected, not
+        // about the value being fixed (that's phase 21).
+        if (circuit.id === 'hungaroring') expect(loop.retracedM).toBeGreaterThan(0)
       }
     },
     180_000,

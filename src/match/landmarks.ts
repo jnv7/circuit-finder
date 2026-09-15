@@ -8,6 +8,7 @@
 // as manual tracing already does. See
 // docs/specs/phase-14-corner-anchored-placement.md.
 import { joinWaypoints, routeDeviation } from '../app/trace'
+import type { RouteLeg } from '../app/trace'
 import { extractCorners } from '../geometry/corners'
 import type { ExtractCornersOptions } from '../geometry/corners'
 import { pathLength } from '../geometry/path'
@@ -75,7 +76,53 @@ export function resolveLandmark(
   const alignMaxRad = opts?.alignMaxRad ?? ALIGN_MAX_RAD
   const expected = placeCandidatePoint(landmark.corner.point, candidate, scale)
   const resolved = graph.nearestAlignedPointM(expected, landmark.heading, searchRadiusM, alignMaxRad)
-  return { landmark, point: resolved?.point ?? null, node: resolved?.node ?? null }
+  return { landmark, point: resolved?.point ?? null, node: resolved?.node ?? null, retraceM: 0 }
+}
+
+/**
+ * For every edge id used by more than one leg, every use beyond the first
+ * counts its full length toward the total — the loop's honest "retraced, not
+ * new ground" figure. `perLegM[i]` is leg `i`'s own share of that total: a
+ * shared edge's length is split evenly across every leg that uses it, so
+ * summing `perLegM` always reproduces `totalM` exactly, with no arbitrary
+ * choice of which use was "the retrace" — a loop has no natural start.
+ */
+function computeRetraced(
+  legs: readonly RouteLeg[],
+  graph: StreetGraph,
+): { totalM: number; perLegM: number[] } {
+  const legIndicesByEdge = new Map<number, number[]>()
+  legs.forEach((leg, i) => {
+    for (const edgeId of leg.edgeIds) {
+      const list = legIndicesByEdge.get(edgeId)
+      if (list) list.push(i)
+      else legIndicesByEdge.set(edgeId, [i])
+    }
+  })
+
+  let totalM = 0
+  const perLegM = legs.map(() => 0)
+  for (const [edgeId, legIndices] of legIndicesByEdge) {
+    if (legIndices.length < 2) continue
+    const lengthM = graph.edgeLengthM(edgeId)
+    const extraM = (legIndices.length - 1) * lengthM
+    totalM += extraM
+    const shareM = extraM / legIndices.length
+    for (const i of legIndices) perLegM[i]! += shareM
+  }
+  return { totalM, perLegM }
+}
+
+/** Split each landmark's retraced share evenly between the two legs touching
+ *  it (leg `i - 1` ends there, leg `i` starts there) — a shared edge's blame
+ *  genuinely belongs to both ends of the leg that carries it, not one
+ *  arbitrarily. */
+function retraceMByAnchor(perLegM: readonly number[], anchorCount: number): number[] {
+  return Array.from({ length: anchorCount }, (_, i) => {
+    const before = perLegM[(i - 1 + anchorCount) % anchorCount]!
+    const after = perLegM[i]!
+    return (before + after) / 2
+  })
 }
 
 /** Build a `SkeletonLoop` from resolved anchors + the placed reference ring:
@@ -92,14 +139,18 @@ function buildLoop(anchors: LandmarkAnchor[], placedRingM: Point[], graph: Stree
   const { points, legs } = joinWaypoints(waypoints, nodes, graph)
   const gapCount = legs.filter((l) => !l.real).length
   const { meanM, maxM } = routeDeviation(points, placedRingM)
+  const { totalM: retracedM, perLegM } = computeRetraced(legs, graph)
+  const retraceMs = retraceMByAnchor(perLegM, anchors.length)
+  const anchorsWithRetrace = anchors.map((a, i) => ({ ...a, retraceM: retraceMs[i]! }))
 
   return {
-    anchors,
+    anchors: anchorsWithRetrace,
     legs,
     lengthM: pathLength(points, false),
     meanDeviationM: meanM,
     maxDeviationM: maxM,
     gapCount,
+    retracedM,
     placedRingM,
   }
 }
@@ -160,14 +211,18 @@ export function moveLandmark(
   }
   const gapCount = legs.filter((l) => !l.real).length
   const { meanM, maxM } = routeDeviation(points, loop.placedRingM)
+  const { totalM: retracedM, perLegM } = computeRetraced(legs, graph)
+  const retraceMs = retraceMByAnchor(perLegM, n)
+  const anchorsWithRetrace = anchors.map((a, i) => ({ ...a, retraceM: retraceMs[i]! }))
 
   return {
-    anchors,
+    anchors: anchorsWithRetrace,
     legs,
     lengthM: pathLength(points, false),
     meanDeviationM: meanM,
     maxDeviationM: maxM,
     gapCount,
+    retracedM,
     placedRingM: loop.placedRingM,
   }
 }
