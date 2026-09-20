@@ -32,6 +32,8 @@ no multi-user features.
 - Trace the actual running route along real streets, following the overlay.
 - Save an attempt and reopen it later; export/import it as a file.
 - The primary output is a clear map view to **study and memorise** the route.
+- Download a route as a GPX file, to hand off to whatever app gives
+  turn-by-turn guidance during the actual run (2026-09-20).
 
 ## Principles
 
@@ -48,7 +50,7 @@ no multi-user features.
 
 - Elevation / altitude matching.
 - Mirrored (reflected) circuit placements.
-- GPX export as a priority (may come later; not core).
-- Turn-by-turn navigation during the run.
+- Turn-by-turn navigation *inside* this app during the run — GPX export
+  (2026-09-20) is the hand-off; a separate app gives the step-by-step.
 - Supporting circuits or cities beyond what is bundled (until the roadmap frees
   the map).

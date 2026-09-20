@@ -6,6 +6,69 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
+**2026-09-21 — Phase 22 shipped; current priority moves to Phase 23.**
+[specs/phase-22-route-generator.md](specs/phase-22-route-generator.md) is
+implemented: `src/route/` (raster, poseSearch, mapMatch, pruneSpikes, metrics,
+escalate), `src/routes.ts`, and `npm run generate-route -- <id>`. All three
+bundled circuits are generated and committed
+(`src/data/routes/{hungaroring,silverstone,catalunya}.json`); every one's top
+route clears the acceptance bar. Full real-data figures and two honest
+deviations from the spec's exact plumbing (a whole-recompute `pruneSpikes`
+instead of an incremental one; the escalation ladder's own `PRUNE_POOL`
+constant) are in the decision log entry of this date. Current priority is now
+[specs/phase-23-routes-page.md](specs/phase-23-routes-page.md) — a second
+static page, `routes.html`, that looks up a circuit's generated routes, draws
+each on a real basemap next to the circuit outline, shows plainly how well it
+matches, and downloads it as GPX (reuses Phase 18's `app/gpx.ts`, written now
+if Phase 18 hasn't landed yet).
+
+Phase 18 (GPX export from the existing trace/skeleton flow) and Phase 19
+(circuit-extraction tooling) below are not abandoned — GPX export is now
+needed sooner (by Phase 23) and circuit-extraction tooling still gates the
+full calendar — just reordered behind 22/23. The existing suggestion/
+skeleton page keeps working unchanged; whether to retire any of it is a
+later, separate decision once the routes page has been used for real.
+
+<details>
+<summary>Previous priority (2026-09-20), superseded above but kept for
+context</summary>
+
+**2026-09-20 — direct user request supersedes the previous priority below.**
+A 2026-09-20 session investigated the user's own concern that Phase 6-15
+suggestions and Phase 14 skeletons don't look enough like the circuit, and
+found the real lever: judge a **closed running route by its symmetric
+distance to the circuit**, not "does the outline lie on streets" (full
+findings in the decision log entry of that date). A prototype built on that
+idea (candidate poses from an exhaustive raster search, then closed-loop
+Viterbi map matching on the street graph, then spike pruning) clearly beat
+Phase 14 on the user's own metric for all three bundled circuits. The user
+then asked for this to become a real, offline, one-circuit-at-a-time
+generator whose results are stored and looked up on a **new page**, with
+GPX download for a receiving navigation app. Two specs, ready:
+
+1. [specs/phase-22-route-generator.md](specs/phase-22-route-generator.md) —
+   turns the prototype's pipeline into tested, committed modules
+   (`src/route/`) plus a dev-only script, `npm run generate-route -- <id>`,
+   that writes `src/data/routes/<id>.json`. Nothing runs in the browser.
+2. [specs/phase-23-routes-page.md](specs/phase-23-routes-page.md) — a
+   second static page, `routes.html`, that looks up a circuit's generated
+   routes, draws each on a real basemap next to the circuit outline, shows
+   plainly how well it matches, and downloads it as GPX (reuses Phase 18's
+   `app/gpx.ts`, written now if Phase 18 hasn't landed yet).
+
+Phase 18 (GPX export from the existing trace/skeleton flow) and Phase 19
+(circuit-extraction tooling) below are not abandoned — GPX export is now
+needed sooner (by Phase 23) and circuit-extraction tooling still gates the
+full calendar — just reordered behind 22/23. The existing suggestion/
+skeleton page keeps working unchanged; whether to retire any of it is a
+later, separate decision once the routes page has been used for real.
+
+</details>
+
+<details>
+<summary>Previous priority (2026-09-15), superseded above but kept for
+context</summary>
+
 **Stability confirmed, independently, 2026-09-15**: `npm run test:run` is
 green with no timeouts under simulated CI load (`--maxWorkers=2`, run
 twice); the live site (`https://www.jnvasconcelos.com/circuit-finder/`) is
@@ -95,6 +158,8 @@ only changes which point a sample resolves to, Phase 12 only changes which
 poses get proposed and how the final list is spread). Full story: the Phase
 10/11/12 decision-log entries below and
 [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
+
+</details>
 
 ## Phases
 
@@ -459,6 +524,99 @@ Spec: [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pi
   `dist/index.html` from a clean `npm run build` — passes, no false
   positive.
 
+### Phase 18 — GPX export of the traced route — `todo`
+
+Spec: [specs/phase-18-gpx-export.md](specs/phase-18-gpx-export.md). A pure
+`app/gpx.ts` (`buildGpx`, `gpxFilename`) plus a button next to Study view
+that downloads `AppState.route`/a committed Phase 14 skeleton as a `.gpx`
+`<trk>`. Not yet implemented; Phase 22/23 (below) need `app/gpx.ts` sooner
+than this phase's own UI and will create it if this hasn't landed first.
+
+### Phase 19 — Circuit-extraction tooling — `todo`
+
+Spec: [specs/phase-19-circuit-extraction-tooling.md](specs/phase-19-circuit-extraction-tooling.md).
+`geometry/simplify.ts` (Douglas–Peucker) plus a dev-only
+`scripts/extract-circuit.ts` that turns the documented-but-uncommitted OSM
+extraction pipeline into a repeatable, validated tool — the enabler for
+batch-adding the rest of the F1 calendar. Not yet implemented.
+
+### Phase 20 — Detect skeleton backtracking — `done`
+
+Spec: [specs/phase-20-detect-skeleton-backtracking.md](specs/phase-20-detect-skeleton-backtracking.md).
+Skeletons expose `retracedM`/`LandmarkAnchor.retraceM` (edge-sharing detected
+via `shortestPath`'s `edgeIds`, split evenly across the legs/landmarks that
+share an edge) and a third amber marker style, so a skeleton that hides
+"comb" backtracking behind honest-looking length/gap numbers now shows it.
+See the 2026-09-15 decision log entries for the real figures (hungaroring
+23% retraced, silverstone/catalunya smaller but real).
+
+### Phase 21 — Avoid skeleton backtracking (local repair pass) — `rejected`
+
+Spec: [specs/phase-21-avoid-skeleton-backtracking.md](specs/phase-21-avoid-skeleton-backtracking.md).
+Prototyped exactly as sketched (re-resolve a retracing landmark excluding
+edges its neighbours already used) and measured: **zero effect**, on every
+landmark, on both circuits tested — structural, not tunable, because a
+landmark's already-resolved point can never be the one excluded. Not
+implemented; see the 2026-09-15 decision log entry for the full diagnosis.
+Superseded in spirit by Phase 22's map matching, which resolves every
+landmark *jointly* instead of independently — the redesign this rejection
+said would be needed.
+
+### Phase 22 — Route generator (offline, stored results) — `done`
+
+Spec: [specs/phase-22-route-generator.md](specs/phase-22-route-generator.md).
+Turns the 2026-09-20 prototype (exhaustive pose search → closed-loop Viterbi
+map matching on the street graph → spike pruning) into tested modules
+(`src/route/`) and a dev-only `npm run generate-route -- <circuitId>` script
+that writes `src/data/routes/<circuitId>.json`. Judges a route by the
+user's own metric — symmetric distance to the circuit — not by whether the
+circuit outline lies on streets.
+
+- `graph.ts` gained `componentOf`/`mainComponent`; `route/raster.ts`
+  (12-layer orientation distance transform), `route/poseSearch.ts` (50 m/15°
+  exhaustive grid, soundly pre-filtered), `route/mapMatch.ts` (closed-loop
+  Viterbi), `route/pruneSpikes.ts`, `route/metrics.ts` (Fréchet, retraced
+  fraction, acceptance bar), `route/escalate.ts` (the three-tier ladder), and
+  `src/routes.ts` (`RouteFile`, `validateRouteFile`) — all new, all unit
+  tested (69 new tests). `scripts/generate-route.ts` is a thin `tsx` CLI;
+  `tsx` added as a `devDependency`.
+- **Real-data result, all three bundled circuits generated and committed**
+  (`src/data/routes/*.json`): hungaroring — tier 0, top route mean 20.8 m /
+  max 68.1 m / length 1.124x / retrace 1.8%, passes; catalunya — tier 0, top
+  route mean 22.0 m / max 80.8 m / length 1.180x / retrace 0.08%, passes;
+  silverstone — escalated to **tier 2**, top route mean 29.8 m / max 95.6 m /
+  length 1.148x / retrace 1.5%, passes (narrowly clears the bar the
+  2026-09-20 prototype, at tier-0-only thoroughness, had missed). Generation
+  times on the maintainer's machine under unusually heavy contention (system
+  load average 400-800 during this run): hungaroring 167 s, catalunya 228 s
+  (both tier 0 only), silverstone 1498 s across all three tiers (tier 0
+  417 s, tier 1 520 s, tier 2 562 s) — every tier well inside the spec's
+  15-minute budget, total well inside the 45-minute one, even under that
+  load.
+- **Two deliberate departures from the spec's exact plumbing**, both allowed
+  by its own "contract is the pipeline, not the plumbing" provenance note:
+  `pruneSpikes` is a whole-recompute-per-candidate implementation, not an
+  incremental one — the spec's own named fallback ("if that design is not
+  ready, ... pruning only the 3 best routes per tier") — applied via
+  `escalate.ts`'s new `PRUNE_POOL` (10 candidates get the expensive pruning
+  pass per tier, not every matched pose); real generation times above show
+  this fallback comfortably meets the performance budget anyway. `routes.test
+  .ts`'s stored-file recompute check measures length/deviation/Fréchet
+  directly off each route's own stored points (exact, no graph needed) but
+  re-derives `retracedFraction` by snapping points back onto the graph (the
+  file doesn't store node ids) — approximate near junctions/parallel
+  streets, so that one check alone uses a wider tolerance, documented in the
+  test itself.
+- `npm run build` and `npm run test:run` both pass (324 tests).
+
+### Phase 23 — Routes page (look up generated routes, download GPX) — `todo`
+
+Spec: [specs/phase-23-routes-page.md](specs/phase-23-routes-page.md). A
+second static page, `routes.html`, that looks up a circuit's Phase 22
+routes, draws each on a real OSM basemap next to the circuit outline, shows
+plainly how well it matches (and how it misses, honestly, when it does),
+and downloads it as GPX. Not yet implemented.
+
 ### Later — classified by cost and benefit (2026-09-15)
 
 Not a commitment list — a rated menu, reassessed as real usage (and the
@@ -507,6 +665,181 @@ goal, not effort spent.
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-21 — Phase 22 (route generator) implemented, real data
+  generated for all three bundled circuits, every one's top route clears
+  the acceptance bar.** Built the 2026-09-20 prototype's pipeline as tested,
+  committed modules rather than reusing any of the deleted prototype code
+  (none survived, per that entry) — this is an independent reimplementation
+  against the same spec/contract, not a port, so exact numbers were expected
+  to differ somewhat from the prototype's own (they came out close, and in
+  silverstone's case better — see below).
+  - **Stage 1 (`route/raster.ts`, `route/poseSearch.ts`).** Rasterisation
+    uses an exact 2D Euclidean distance transform (Felzenszwalb & Huttenlocher,
+    two 1D passes) per orientation layer, not a chamfer approximation.
+    `poseSearch` runs the exhaustive 50 m/15° anchor/rotation grid itself as
+    the only resolution (no further, finer grid); its "coarse" pass is a
+    same-resolution pre-filter using sparser sampling (100 m vs. the real
+    pass's 20 m) and a correspondingly dilated hole threshold, proven sound
+    on a synthetic case (`poseSearch.test.ts`: pruned and unpruned searches
+    return the identical best pose).
+  - **Stage 2 (`route/mapMatch.ts`).** Closed-loop Viterbi implemented by
+    trying every one of a sample's candidates at index 0 as the fixed
+    start/end (at most `MATCH_CANDIDATES`, i.e. <= 16 full passes even at
+    tier 2) rather than a more elaborate wrap-around DP — simple and, at
+    this candidate count, cheap.
+  - **Stage 3 (`route/pruneSpikes.ts`) — the one deliberate scope reduction.**
+    Implemented as whole-recompute-per-candidate-removal, not the spec's
+    "re-evaluate only the two affected legs" incremental design. This is the
+    spec's **own named fallback** ("if that design is not ready, ... pruning
+    only the 3 best routes per tier, which cuts the cost by a third with no
+    change in the top result") — applied via a new `escalate.ts` constant,
+    `PRUNE_POOL = 10` (only each tier's best 10 matched candidates, by their
+    *unpruned* `worstRatio`, get the expensive pruning pass; the rest are
+    discarded before stage 3 ever runs). Real generation times (below) show
+    this comfortably meets the spec's per-tier/per-circuit budget even so —
+    the incremental version remains a real future option if the pool ever
+    needs to grow, not a correctness gap today.
+  - **Stage 4 (`route/metrics.ts`).** Discrete Fréchet distance is the
+    classic Eiter–Mannila DP, ring-start-aligned to the point nearest the
+    route's own start, exactly as specified. `retracedFraction` sums, over
+    every graph edge walked more than once across the whole loop, every use
+    beyond the first — same idea as Phase 20's per-landmark version, applied
+    to a route's `RouteLeg`s as a whole.
+  - **The escalation ladder (`route/escalate.ts`)** runs the exact tier
+    table the spec specifies (poses 120/240/400, match radius 90/120/150 m,
+    candidates 8/12/16, prune passes 3/5/8), stopping at the first tier
+    whose best candidate clears the bar or after tier 2 regardless.
+  - **Real-data result — all three bundled circuits generated, all three
+    top routes pass the bar**, an improvement on the prototype's own
+    tier-0-only measurement (where silverstone missed):
+
+    | Circuit | Tier | Mean dev. | Max dev. | Length ratio | Retraced | Passes |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | hungaroring | 0 | 20.8 m | 68.1 m | 1.124x | 1.8% | yes |
+    | catalunya | 0 | 22.0 m | 80.8 m | 1.180x | 0.08% | yes |
+    | silverstone | 2 | 29.8 m | 95.6 m | 1.148x | 1.5% | yes (narrowly) |
+
+    Generation ran under unusually heavy sandbox contention this session
+    (system load average 400-800 on an 8-core machine, confirmed via `top`
+    — a real environmental anomaly, not a code issue: the same test files
+    that took 13-15 s early in the session took up to 2114 s later under
+    worse contention). Even so, every tier finished well inside its 15-minute
+    budget: hungaroring 167 s (tier 0 only), catalunya 228 s (tier 0 only),
+    silverstone 417 s / 520 s / 562 s for tiers 0/1/2 (1498 s total, against
+    a 45-minute cap). On a quiet machine this should be substantially faster.
+  - **`routes.test.ts`'s recompute check** measures length, mean/max
+    deviation, and Fréchet distance directly from each stored route's own
+    `points` (pure geometry, no graph involved) — these matched stored
+    values to within a few metres on all three files (lon/lat's 6-decimal
+    storage rounding, accumulated over a several-km route). `retracedFraction`
+    is the one metric that needs edge identity, which the file doesn't
+    store directly; the test re-derives it by snapping each stored point
+    back onto the graph, which is inherently approximate (a snap near a
+    junction or between close parallel streets can land on a different node
+    than the one actually walked) — measured on real data, this agreed to a
+    few thousandths on two files and was off by ~0.056 on hungaroring's
+    second route, so that one check alone carries a wider (0.1 absolute)
+    tolerance, documented inline. A first version of this same test tried to
+    rebuild the *entire* route from re-snapped node ids via `shortestPath`
+    and compare lengths — found and rejected during this session: it
+    diverged by up to ~390 m on a ~5 km route despite the underlying file
+    being completely correct, because a re-snapped node sequence can resolve
+    to a genuinely different (if similarly short) real path than the one the
+    generator actually produced. Measuring geometry directly off the stored
+    points, and reserving graph re-derivation for only the one metric that
+    truly needs it, avoided that failure mode.
+  - **First attempt at the "escalates when it must" test (`escalate.test
+    .ts`) had a fixture bug, not an algorithm bug**: the synthetic street
+    network only split its bottom side into two junction nodes, leaving the
+    other three sides as single long edges whose midpoints sat well past
+    even tier 2's 150 m match radius — so every tier failed for a reason
+    unrelated to what the test meant to isolate. Fixed by splitting every
+    side's midpoint except the one deliberately under test.
+  - `npm run build` and `npm run test:run` pass (324 tests, up from 260).
+  - **Not done, matching the spec's own scope**: nothing runs in the
+    browser; Phase 23 (routes page) is next.
+
+- **2026-09-20 — Investigated a direct user concern that Phase 6-15
+  suggestions and Phase 14 skeletons don't look enough like the circuit;
+  found the right metric and a pipeline that clearly beats Phase 14 on it;
+  two new phases spec'd.** Four throwaway prototypes were built and deleted
+  in sequence (not committed; each one's code copied to the session
+  scratchpad only, likely gone; findings kept in two memory notes,
+  `raster-oracle-prototype-findings.md` and `route-matching-experiment.md`):
+  1. **Exhaustive raster/orientation-layer search vs. the current coarse-
+     to-fine search**, permissive tolerance (35°, 20 m hole): the exhaustive
+     search's top candidate beat the current search's top candidate on all
+     three bundled circuits (e.g. silverstone: 70% → 83% of the outline
+     within 20 m of an aligned street, longest hole 520 m → 120 m — the
+     current search's top pick was hanging off the bundled bbox's edge). But
+     the top-5 candidates across all three circuits landed in one 0.4-0.95
+     km suburban zone, and rotation *was* discriminated there (only 1-7 of
+     24 rotations scored within 25% of the best) — an earlier same-session
+     claim that "any rotation fits" was checked and found wrong.
+  2. **Strict tolerance (20°/12 m and 12°/10 m)**: no pose in the bundled
+     bbox has zero holes at either strictness. Allowing holes up to 300 m,
+     the exhaustive optimum reaches only 56-69% of the outline within 12 m —
+     the honest ceiling for "circuit outline lies on streets" in Porto at
+     1:1, not a search-quality problem.
+  3. **Scale freedom (0.75x-1.25x)**: not the lever either. Best case
+     (0.75x) gained only 0-8 points over 1.0x under strict tolerance; holes
+     stayed 110-275 m at every scale tested.
+  4. **The user's own proposed reframe — judge a closed running route by
+     its *symmetric distance to the circuit* (both directions), not
+     "outline lies on streets," in a Minecraft-style raster grid — tested
+     directly and found to work.** Candidate poses (120 per circuit, from
+     stage 1's exhaustive search at loose tolerance) were each resolved into
+     a real route by a **closed-loop Viterbi map match** over the street
+     graph (jointly choosing every waypoint, unlike Phase 14's
+     `resolveLandmark`, which the Phase 21 rejection diagnosed as exactly
+     the missing piece), then cleaned by greedy spike removal. Measured
+     against the **full** circuit centreline (Phase 14's own comparison used
+     only its corner polygon, which flatters its numbers), the best route
+     beat the best of the current search's top-5 skeletons on every circuit:
+     hungaroring mean deviation 42→22 m, max 236→76 m, length ratio
+     1.02x→1.13x, retraced 5%→2%; catalunya 54→22 m, 198→88 m,
+     1.10x→1.19x, 12%→2%; silverstone 87→33 m, 294→128 m,
+     1.17x→1.24x, 21%→1%. Against a provisional bar (mean ≤30 m, max
+     ≤100 m, length 0.9-1.2x, retrace ≤5%, accepted by the user without
+     independently validating the numbers) hungaroring and catalunya pass,
+     silverstone misses narrowly. Match parameters were tuned only on a
+     12-combination sweep against hungaroring's 12 candidate poses and
+     applied unchanged to the other two circuits — held on catalunya, less
+     well on silverstone. Six generated-route images (three circuits × old
+     vs. new) were rendered and shown to the user in a private artifact for
+     visual confirmation before any of this was written up. Two caveats the
+     user has not yet weighed in on: spike pruning cost ~40 minutes per
+     circuit as prototyped (naive whole-route recompute per candidate
+     removal, machine under heavy load) — a real version needs incremental
+     local evaluation, scoped explicitly in
+     [specs/phase-22-route-generator.md](specs/phase-22-route-generator.md);
+     and the street set used includes footways/paths/steps, so "runnable"
+     is not yet filtered.
+  **Decision, per the user's explicit request**: build this as a real
+  feature, not another throwaway. Two phases spec'd:
+  [specs/phase-22-route-generator.md](specs/phase-22-route-generator.md)
+  (the pipeline above as tested modules in `src/route/`, plus a dev-only
+  `npm run generate-route -- <circuitId>` script — nothing runs in the
+  browser, output is committed JSON per circuit) and
+  [specs/phase-23-routes-page.md](specs/phase-23-routes-page.md) (a new,
+  separate static page, `routes.html`, that looks up a circuit's generated
+  routes on a real basemap next to the circuit outline and offers a GPX
+  download — kept separate from the existing suggestion/skeleton page
+  because the two pages embody different ideas of "match" and the existing
+  one is a tool while this one is a lookup). `StreetGraph` needs a
+  `componentOf`/`mainComponent` addition (scoped in Phase 22): the
+  prototype found `A*` pathologically slow toward nodes in a different,
+  disconnected component (measured 2026-09-20: the real network's main
+  component holds 34 474 of 37 653 nodes, 91.6%, across 1 313 components,
+  the next largest just 42 nodes) — restricting match candidates to the
+  main component brought 12-pose matching from minutes to 3 s. "Current
+  priority" reordered: Phase 22/23 now precede Phase 18/19 (GPX export is
+  needed sooner, by Phase 23, than by its own original UI; Phase 19's
+  circuit-extraction tooling still gates the full calendar but is not
+  blocking this). The existing Phase 6-15 suggestion flow and Phase 14
+  skeleton are untouched and keep working; retiring any of them is an
+  explicit later decision, not part of this one.
 
 - **2026-09-15 — Phase 21 rejected: the sketched local repair pass was
   prototyped, measured against real data, and found to structurally never

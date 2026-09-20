@@ -293,4 +293,51 @@ describe('buildStreetGraph (real data)', () => {
     // default, matching every other real-data test in this codebase.
     30_000,
   )
+
+  it(
+    'componentOf.mainComponent holds at least 90% of nodes (Phase 22)',
+    () => {
+      const network = loadStreetNetwork()
+      const graph = buildStreetGraph(network.ways)
+      let mainCount = 0
+      for (let id = 0; id < graph.nodeCount; id++) {
+        if (graph.componentOf(id) === graph.mainComponent) mainCount++
+      }
+      const share = mainCount / graph.nodeCount
+      // eslint-disable-next-line no-console
+      console.log(`main component: ${mainCount}/${graph.nodeCount} nodes (${(share * 100).toFixed(1)}%)`)
+      expect(share).toBeGreaterThan(0.9)
+    },
+    30_000,
+  )
+})
+
+describe('buildStreetGraph — componentOf / mainComponent (Phase 22)', () => {
+  it('labels two disjoint synthetic networks differently, and mainComponent is the larger (by node count)', () => {
+    // "small": one edge, 2 nodes. "big": a T-junction far away, 4 nodes —
+    // more polyline *points* on one edge would not add graph nodes, so the
+    // bigger component must come from more real junctions/endpoints.
+    const small: Street = [
+      [0, 0],
+      [10, 0],
+    ]
+    const bigArm1: Street = [
+      [10000, 10000],
+      [10000, 10100],
+    ]
+    const bigArm2: Street = [
+      [10000, 10000],
+      [10100, 10000],
+    ]
+    const bigArm3: Street = [
+      [10000, 10000],
+      [10000, 9900],
+    ]
+    const graph = buildStreetGraph([small, bigArm1, bigArm2, bigArm3])
+    const a = graph.nearestNode([0, 0], 0.001)!
+    const b = graph.nearestNode([10000, 10100], 0.001)!
+    expect(graph.componentOf(a)).not.toBe(graph.componentOf(b))
+    expect(graph.componentOf(b)).toBe(graph.mainComponent)
+    expect(graph.componentOf(a)).not.toBe(graph.mainComponent)
+  })
 })

@@ -118,6 +118,17 @@ export type StreetGraph = {
    * street geometry.
    */
   edgeLengthM(edgeId: number): number
+  /**
+   * Connected-component id of `node` (an arbitrary, stable-within-this-graph
+   * integer — not comparable across separate `buildStreetGraph` calls).
+   * Phase 22: lets a caller restrict candidates to `mainComponent` instead of
+   * letting `shortestPath`'s A* explore an entire small, disconnected
+   * component before concluding there is no path.
+   */
+  componentOf(node: NodeId): number
+  /** The component id with the most nodes (ties broken by whichever is found
+   *  first during construction — deterministic given the same input ways). */
+  mainComponent: number
 }
 
 type EdgeRecord = { a: NodeId; b: NodeId; points: Point[]; lengthM: number }
@@ -535,6 +546,44 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
     opts?.exclusions ?? GRADE_SEPARATED_EXCLUSIONS,
   )
 
+  // --- Connected components (Phase 22: restrict map-match candidates to the
+  // main one, since A* otherwise explores a whole small disconnected
+  // component before giving up) --------------------------------------------
+  const componentParent = Array.from({ length: nodePositions.length }, (_, i) => i)
+  const componentFind = (x: number): number => {
+    while (componentParent[x] !== x) {
+      componentParent[x] = componentParent[componentParent[x]!]!
+      x = componentParent[x]!
+    }
+    return x
+  }
+  for (const e of edges) {
+    const ra = componentFind(e.a)
+    const rb = componentFind(e.b)
+    if (ra !== rb) componentParent[ra] = rb
+  }
+  const componentIdOfRoot = new Map<number, number>()
+  const componentNodeCount = new Map<number, number>()
+  const componentOfNode: number[] = new Array(nodePositions.length)
+  for (let i = 0; i < nodePositions.length; i++) {
+    const root = componentFind(i)
+    let id = componentIdOfRoot.get(root)
+    if (id === undefined) {
+      id = componentIdOfRoot.size
+      componentIdOfRoot.set(root, id)
+    }
+    componentOfNode[i] = id
+    componentNodeCount.set(id, (componentNodeCount.get(id) ?? 0) + 1)
+  }
+  let mainComponent = 0
+  let mainComponentCount = -1
+  for (const [id, count] of componentNodeCount) {
+    if (count > mainComponentCount) {
+      mainComponentCount = count
+      mainComponent = id
+    }
+  }
+
   // Cumulative arc length at each vertex of every edge, for nearestPointM.
   const edgeCumLength: number[][] = edges.map((e) => {
     const cum = [0]
@@ -755,6 +804,8 @@ export function buildStreetGraph(ways: readonly Street[], opts?: GraphBuildOptio
     nearestAlignedPointM,
     shortestPath,
     edgeLengthM: (edgeId) => edges[edgeId]!.lengthM,
+    componentOf: (node) => componentOfNode[node]!,
+    mainComponent,
   }
 }
 
