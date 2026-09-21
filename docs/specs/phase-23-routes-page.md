@@ -1,6 +1,6 @@
 # Spec — Phase 23: Routes page (look up generated routes, download GPX)
 
-Status: `todo`
+Status: `done` (2026-09-21) — two acceptance steps still open, see the ROADMAP decision log
 Depends on: [phase-22-route-generator.md](phase-22-route-generator.md) (the data),
 [phase-18-gpx-export.md](phase-18-gpx-export.md) (`app/gpx.ts`),
 [phase-2-map-overlay.md](phase-2-map-overlay.md) (Leaflet setup, tiles, attribution)

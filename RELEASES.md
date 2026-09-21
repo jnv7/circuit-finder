@@ -8,6 +8,40 @@ Newest release first.
 
 ---
 
+## 0.14.0 — Ready-made Porto routes for each circuit, on a real map, with a GPX download (2026-09-21)
+
+**There is now a second page, "Generated routes", that simply shows you a
+running route in Porto for each circuit — nothing to drag, nothing to wait
+for.** Open it from the new **Generated routes →** link at the bottom-left of
+the main page (or go straight to `routes.html`).
+
+- **Pick a circuit** and you get up to three routes for it. Each is drawn on
+  the real street map, with the circuit's own outline dashed on top so you can
+  see how closely the route follows it, and a green dot where it starts. The
+  map makes it obvious *where in Porto* the route is; there's also the start
+  coordinates and an "Open in OpenStreetMap" link.
+- **It tells you plainly how good each route is** — its length and how that
+  compares to the circuit ("4.90 km, 1.12× the circuit"), how far it strays
+  from the circuit on average and at worst ("21 m on average, 68 m at most"),
+  and how much of it doubles back on itself. A route that doesn't reach the bar
+  is still shown, marked **Misses the bar**, with exactly which limits it
+  crosses and by how much — nothing is hidden for falling short.
+- **Download GPX** saves the route as a `.gpx` file (named like
+  `hungaroring-route-2.gpx`) as a closed loop, to load into whatever running or
+  navigation app you use. That app is what gives turn-by-turn directions; this
+  page gives it the path.
+- **Every choice is in the address**, e.g. `routes.html#silverstone/2`, so you
+  can bookmark a route or send someone the link.
+- Circuits with no route yet are listed but greyed out as "no route generated
+  yet".
+
+Available today for Hungaroring, Silverstone and Catalunya (three routes each;
+the best one for every circuit meets the bar). The main page is unchanged apart
+from the link. Not yet confirmed: how a GPX loaded into your own running app
+behaves — that's still to be tried.
+
+---
+
 ## 0.13.0 — Corner anchors now tell you when they double back on themselves (2026-09-15)
 
 **"Find corner anchors" can build a skeleton that looks clean — a short

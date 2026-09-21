@@ -7,6 +7,11 @@ export default defineConfig({
     // raw) is inlined into the JS bundle so there is no runtime fetch. That
     // pushes the single chunk past the default 500 KB notice; ~295 KB gzipped.
     chunkSizeWarningLimit: 800,
+    // Two static pages built into the same dist/: the tool and (Phase 23) the
+    // routes lookup.
+    rollupOptions: {
+      input: { main: 'index.html', routes: 'routes.html' },
+    },
   },
   test: {
     include: ['src/**/*.test.ts'],

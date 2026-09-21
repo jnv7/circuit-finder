@@ -13,6 +13,7 @@ import type { StreetGraph } from '../graph'
 import { PORTO_CENTER, PORTO_ZOOM, portoProjection } from '../porto'
 import { buildStreetIndex, loadStreetNetwork } from '../streets'
 import type { StreetIndex, StreetNetwork } from '../streets'
+import { addBasemap } from './basemap'
 import { overlayLatLngs, readout } from './overlay'
 import { LEVELS, SAMPLE_M, lapDeviation, lapProximity, proximityColor, quantize } from './proximity'
 import { bearingFromDrag, handlePixel } from './rotate'
@@ -70,10 +71,6 @@ const SKELETON_COLOR = '#6a1b9a'
 /** A click within this distance of the street network snaps to it while tracing. */
 const SNAP_MAX_M = 30
 
-const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-const OSM_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-
 const toLatLng = ([lon, lat]: LonLat): L.LatLng => L.latLng(lat, lon)
 
 export type MapApp = { destroy(): void }
@@ -103,7 +100,7 @@ export function createMapApp(
   container.append(mapEl, panelEl)
 
   const map = L.map(mapEl, { zoomControl: true }).setView(toLatLng(PORTO_CENTER), PORTO_ZOOM)
-  L.tileLayer(OSM_TILES, { attribution: OSM_ATTRIBUTION, maxZoom: 19 }).addTo(map)
+  addBasemap(map)
 
   const circuitById = (id: string): MetricCircuit => circuits.find((c) => c.id === id) ?? circuits[0]!
 

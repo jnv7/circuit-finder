@@ -56,14 +56,21 @@ jobs:
       - name: Verify the deployed site is the built app, not raw source
         run: |
           set -euo pipefail
-          URL="${{ steps.deployment.outputs.page_url }}"
-          BODY="$(curl -sL "$URL")"
-          if echo "$BODY" | grep -q '/src/main.ts'; then
-            echo "::error::Deployed page references /src/main.ts — this is raw, unbuilt source, not the Vite build output. Check the repository's Settings > Pages > Source is set to 'GitHub Actions', not 'Deploy from a branch'."
-            exit 1
-          fi
-          if ! echo "$BODY" | grep -qE '/circuit-finder/assets/[^"]+\.js'; then
-            echo "::error::Deployed page does not reference a built asset under /circuit-finder/assets/*.js — the live site may not be serving a real build."
-            exit 1
-          fi
-          echo "Deployed site verified: serving a real build, not raw source."
+          BASE="${{ steps.deployment.outputs.page_url }}"
+          BASE="${BASE%/}/"
+          # Both entry points (the tool and, since Phase 23, the routes page):
+          # a second entry is exactly the kind of change that can silently ship
+          # raw source.
+          for PAGE in "" "routes.html"; do
+            URL="${BASE}${PAGE}"
+            BODY="$(curl -sL "$URL")"
+            if echo "$BODY" | grep -q '/src/'; then
+              echo "::error::Deployed page $URL references /src/ — this is raw, unbuilt source, not the Vite build output. Check the repository's Settings > Pages > Source is set to 'GitHub Actions', not 'Deploy from a branch'."
+              exit 1
+            fi
+            if ! echo "$BODY" | grep -qE '/circuit-finder/assets/[^"]+\.js'; then
+              echo "::error::Deployed page $URL does not reference a built asset under /circuit-finder/assets/*.js — the live site may not be serving a real build."
+              exit 1
+            fi
+            echo "Deployed page verified: $URL serves a real build, not raw source."
+          done

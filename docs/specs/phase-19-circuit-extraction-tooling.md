@@ -1,6 +1,6 @@
 # Spec — Phase 19: Circuit-extraction tooling (the enabler for the full F1 calendar)
 
-Status: `todo`
+Status: `superseded` by [phase-24-find-route-by-name.md](phase-24-find-route-by-name.md) (2026-09-21) — never implemented; kept for its reasoning.
 Depends on: [phase-1-geometry.md](phase-1-geometry.md)
 See: [../VISION.md](../VISION.md), [../ROADMAP.md](../ROADMAP.md),
 [../../CONVENTIONS.md](../../CONVENTIONS.md), [../../src/data/circuits.schema.md](../../src/data/circuits.schema.md)

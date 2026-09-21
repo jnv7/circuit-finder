@@ -6,28 +6,32 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
-**2026-09-21 — Phase 22 shipped; current priority moves to Phase 23.**
-[specs/phase-22-route-generator.md](specs/phase-22-route-generator.md) is
-implemented: `src/route/` (raster, poseSearch, mapMatch, pruneSpikes, metrics,
-escalate), `src/routes.ts`, and `npm run generate-route -- <id>`. All three
-bundled circuits are generated and committed
-(`src/data/routes/{hungaroring,silverstone,catalunya}.json`); every one's top
-route clears the acceptance bar. Full real-data figures and two honest
-deviations from the spec's exact plumbing (a whole-recompute `pruneSpikes`
-instead of an incremental one; the escalation ladder's own `PRUNE_POOL`
-constant) are in the decision log entry of this date. Current priority is now
-[specs/phase-23-routes-page.md](specs/phase-23-routes-page.md) — a second
-static page, `routes.html`, that looks up a circuit's generated routes, draws
-each on a real basemap next to the circuit outline, shows plainly how well it
-matches, and downloads it as GPX (reuses Phase 18's `app/gpx.ts`, written now
-if Phase 18 hasn't landed yet).
+**2026-09-21 — Phase 23 shipped; current priority moves to Phase 24.**
+[specs/phase-23-routes-page.md](specs/phase-23-routes-page.md) is implemented:
+a second static page, `routes.html`, that looks up a circuit's Phase 22 routes,
+draws each on the real OSM basemap under the circuit's dashed outline, says
+plainly how well it matches (and how it misses), and downloads it as GPX. The
+existing page's only change is one link to it. Two things are **not** done and
+are recorded in the decision log entry of this date: the acceptance step of
+checking the GPX in the receiving app you actually use (it cannot be
+automated), and the deploy smoke check's first run on the real site (it runs on
+the next push to `main`). The same entry records a **Phase 22 defect** the new
+page's tests found — the generator's `passesBar` is lenient about route length
+outside the 0.90–1.20 band — left unchanged pending your decision.
 
-Phase 18 (GPX export from the existing trace/skeleton flow) and Phase 19
-(circuit-extraction tooling) below are not abandoned — GPX export is now
-needed sooner (by Phase 23) and circuit-extraction tooling still gates the
-full calendar — just reordered behind 22/23. The existing suggestion/
-skeleton page keeps working unchanged; whether to retire any of it is a
-later, separate decision once the routes page has been used for real.
+Current priority is now
+[specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md)
+(defined 2026-09-21, not started): `npm run find-route -- "<circuit name>"`
+fetches a circuit's data (Wikidata + OpenStreetMap), adds it to
+`circuits.json`, and runs Phase 22's generator to store its Porto route, all in
+one command. It absorbs Phase 19 (now `superseded`) and is what the
+full-calendar batch will be run with.
+
+Phase 18 (GPX export from the existing trace/skeleton flow) is not abandoned,
+but smaller now: `app/gpx.ts` already exists (written for Phase 23), so what
+remains is its button and wiring. The existing suggestion/skeleton page keeps
+working unchanged; whether to retire any of it is a later, separate decision
+now that the routes page can be used for real.
 
 <details>
 <summary>Previous priority (2026-09-20), superseded above but kept for
@@ -529,16 +533,20 @@ Spec: [specs/phase-17-harden-deploy-pipeline.md](specs/phase-17-harden-deploy-pi
 Spec: [specs/phase-18-gpx-export.md](specs/phase-18-gpx-export.md). A pure
 `app/gpx.ts` (`buildGpx`, `gpxFilename`) plus a button next to Study view
 that downloads `AppState.route`/a committed Phase 14 skeleton as a `.gpx`
-`<trk>`. Not yet implemented; Phase 22/23 (below) need `app/gpx.ts` sooner
-than this phase's own UI and will create it if this hasn't landed first.
+`<trk>`. Partly landed 2026-09-21: `app/gpx.ts` (`buildGpx`, `gpxFilename`,
+plus Phase 23's `routeGpx`/`routeGpxFilename`) and `app/download.ts` exist and
+are tested, written for Phase 23's routes page. What remains here is the
+"Export GPX" button next to Study view and its wiring in `map.ts`/`controls.ts`.
 
-### Phase 19 — Circuit-extraction tooling — `todo`
+### Phase 19 — Circuit-extraction tooling — `superseded` by Phase 24
 
 Spec: [specs/phase-19-circuit-extraction-tooling.md](specs/phase-19-circuit-extraction-tooling.md).
-`geometry/simplify.ts` (Douglas–Peucker) plus a dev-only
-`scripts/extract-circuit.ts` that turns the documented-but-uncommitted OSM
-extraction pipeline into a repeatable, validated tool — the enabler for
-batch-adding the rest of the F1 calendar. Not yet implemented.
+Never implemented. Absorbed 2026-09-21 by
+[Phase 24](specs/phase-24-find-route-by-name.md), which keeps this phase's
+`geometry/simplify.ts`, stitch/simplify/validate pipeline and "fail loudly,
+write nothing on failure" rules, but **reverses its decision that finding the
+OSM source stays manual**: the requested interface is the circuit's name
+alone. The spec is kept for its reasoning.
 
 ### Phase 20 — Detect skeleton backtracking — `done`
 
@@ -609,13 +617,29 @@ circuit outline lies on streets.
   test itself.
 - `npm run build` and `npm run test:run` both pass (324 tests).
 
-### Phase 23 — Routes page (look up generated routes, download GPX) — `todo`
+### Phase 23 — Routes page (look up generated routes, download GPX) — `done`
 
 Spec: [specs/phase-23-routes-page.md](specs/phase-23-routes-page.md). A
-second static page, `routes.html`, that looks up a circuit's Phase 22
-routes, draws each on a real OSM basemap next to the circuit outline, shows
-plainly how well it matches (and how it misses, honestly, when it does),
-and downloads it as GPX. Not yet implemented.
+second static page, `routes.html` (`src/routesMain.ts`,
+`src/app/routesPage.ts`), that looks up a circuit's Phase 22 routes, draws
+each on the OSM basemap under the circuit's dashed outline, shows plainly how
+well it matches — and, when it does not, which terms miss and by how much
+(`app/barMisses.ts`) — and downloads it as GPX (`app/gpx.ts`). State lives in
+the URL hash (`#silverstone/2`, `app/routesHash.ts`). The deploy smoke check
+now covers both pages. Two acceptance steps remain open (GPX in the receiving
+app; the deploy check's first real run) — see the decision log, 2026-09-21.
+
+### Phase 24 — `find-route`: from a circuit's name to a stored Porto route — `todo`
+
+Spec: [specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md).
+`npm run find-route -- "Monza"`: reuse the circuit if bundled, otherwise
+resolve the name on Wikidata (coordinate + official length), fetch its track
+ways from Overpass around that coordinate, find the lap as the closed ring
+whose length matches the official one (refusing, with the candidates listed,
+when it cannot decide), simplify/validate/append to `circuits.json`; then run
+Phase 22's generator and write `src/data/routes/<id>.json`. Dev-only, network
+used only for the one-time fetch, all outputs committed static JSON. Supersedes
+Phase 19. Not yet implemented.
 
 ### Later — classified by cost and benefit (2026-09-15)
 
@@ -629,7 +653,7 @@ goal, not effort spent.
 
 | Item | Cost | Benefit | Why |
 | --- | --- | --- | --- |
-| Full F1 calendar (~21 more circuits) via Phase 19's tool | **High** — heterogeneous: permanent circuits should be straightforward per-circuit runs of the tool; street circuits (Monaco, and likely several others — Baku, Singapore, Jeddah, Las Vegas, Miami all share Monaco's "mapped as ordinary streets, not a clean raceway relation" risk) may each need real one-off investigation, or may simply not be cleanly extractable, the same honest outcome Monaco already hit | **Highest** — this is VISION.md's opening scenario ("during the Madrid Grand Prix week, run something shaped like the Madrid circuit") and the explicit stated priority | Start with a verified list of the current season's circuits (a fresh check, not assumed from training data) and split into an easy batch (permanent/park circuits) shipped first, and a street-circuit batch tackled second, expecting some to end up documented-and-dropped like Monaco rather than forced |
+| Full F1 calendar (~21 more circuits) via Phase 24's `find-route` command | **High** — heterogeneous: permanent circuits should be straightforward per-circuit runs of the command (each also costs minutes of route generation); street circuits (Monaco, and likely several others — Baku, Singapore, Jeddah, Las Vegas, Miami all share Monaco's "mapped as ordinary streets, not a clean raceway relation" risk) may each need real one-off investigation, or may simply not be cleanly extractable, the same honest outcome Monaco already hit | **Highest** — this is VISION.md's opening scenario ("during the Madrid Grand Prix week, run something shaped like the Madrid circuit") and the explicit stated priority | Start with a verified list of the current season's circuits (a fresh check, not assumed from training data) and split into an easy batch (permanent/park circuits) shipped first, and a street-circuit batch tackled second, expecting some to end up documented-and-dropped like Monaco rather than forced |
 | Validate Phase 6/12/14/15's tuned constants against shape diversity | **Low** — no new code, just run 2-3 deliberately extreme new circuits (a very tight one, a long sweeping one, a long-straight street one) through the existing pipeline and read the honest numbers, the same "measure, don't assume" discipline this whole matching engine was built with | **Medium-high** — every constant in `match/` was tuned only against 3 circuits in a narrow 4.3-5.9 km band; Monaco-scale (~3.3 km, tight) and Spa-scale (~7 km, sweeping) are genuinely different regimes | Fold into the *first few* circuit additions (step 3 above), not a separate phase — catches a tuning problem while only a handful of circuits are affected, not after all ~24 are in |
 
 #### Medium-term (real value, not blocking the calendar goal)
@@ -665,6 +689,98 @@ goal, not effort spent.
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-21 — Phase 23 (routes page) implemented and checked in a real
+  browser; two acceptance steps remain open, and the page's tests found a
+  Phase 22 defect.**
+  - **Built:** `routes.html` + `src/routesMain.ts` (route files are lazy chunks
+    via `import.meta.glob`, one per circuit, validated on load with
+    `loadRouteFile`); `app/routesPage.ts` (the page), `app/routesHash.ts`,
+    `app/barMisses.ts`, `app/gpx.ts` (Phase 18's `buildGpx`/`gpxFilename` as
+    specified, plus `routeGpx`/`routeGpxFilename`), `app/download.ts`;
+    `vite.config.ts` builds both pages; `.github/workflows/deploy.yml`'s smoke
+    check loops over `index` and `routes.html`, asserting no `/src/` reference
+    and a `/circuit-finder/assets/*.js` reference in each. The tool page's only
+    change is a fixed "Generated routes →" link (in `index.html`, so no
+    tool code changed). 386 tests pass (324 before), `npm run build` passes.
+  - **Small departures from the spec's file list, all in service of it:**
+    the OSM tile URL/attribution moved from `map.ts` into a new
+    `app/basemap.ts` (`addBasemap`), so the routes page reuses them without
+    bundling the tool (measured: the routes entry is 12.6 kB, with each route
+    file a ~18-22 kB lazy chunk; the 584 kB street network is not in it);
+    `escapeHtml` is now exported from `circuits.ts` rather than copied a third
+    time; the download mechanism is its own `app/download.ts`, ready for
+    Phase 18's button; the outline is drawn with the existing
+    `overlayLatLngs` (scale → rotate → `placePoints`) rather than by calling
+    `placePoints` directly; a route's misses are a list, one term per line,
+    not one run-on sentence; the map's fit leaves room for the panel.
+  - **A real-data invariant is tested:** for every committed route, the
+    outline the page would draw (circuit + the route's own pose and scale),
+    measured against the route, reproduces the stored mean deviation to
+    within 3 m — so the dashed outline is provably where the generator
+    measured it, not just plausible-looking.
+  - **Checked by eye** with headless Chrome against `vite preview` of the
+    production build: Hungaroring route 1 sits over Ribeira/Baixa on the real
+    basemap with its dashed outline and start marker; `#silverstone/2` restores
+    that route and lists its three misses with real figures (mean 32 m/30 m,
+    longest 126 m/100 m, length 1.28×/0.90-1.20×); the narrow-width layout
+    moves the panel under the map. The narrow check used headless Chrome's
+    minimum window size, so it is approximate, not a real phone.
+  - **Phase 22 defect found (not changed):** `route/metrics.ts`'s `barTerms`
+    normalises the length term by the boundary it crossed, so `lengthTerm <= 1`
+    for any length ratio between 0 and 2.4 — `passesBar` accepts a route 1.5×
+    the circuit's length, contradicting the stated 0.90-1.20 band and the
+    spec's own "`worstRatio <= 1` iff every bar term is met". Found by a
+    property test comparing `barMisses` with `passesBar`. Effect on committed
+    data: exactly one stored flag disagrees with the literal band — catalunya
+    route 2, length 1.201× against a 1.20× limit, stored `passesBar: true`. The
+    routes page judges by the literal band (a route is "Meets the bar" iff
+    `barMisses` is empty), so it would label that route as missing by a hair.
+    The generator was **not** touched: fixing it changes ranking and the
+    spike-pruning sum, i.e. what a regeneration produces, which is a decision
+    for you. Options: (a) leave it (only routes > 20 % off are affected, and
+    none of the top routes are); (b) make an out-of-band length term exceed 1,
+    then regenerate. Recommend (b) when Phase 24 next touches the generator.
+  - **Still open:** (1) **GPX in the receiving app** — the spec's one
+    non-automatable acceptance step; nobody has yet imported a downloaded file
+    into the running/navigation app in actual use, so whether a `<trk>` gives
+    step-by-step guidance there (versus needing an `<rte>` button) is unknown.
+    (2) **The deploy smoke check on the real site** — the new loop was run
+    against `vite preview` locally and the workflow YAML parses, but it has not
+    run on GitHub Pages; it does on the next push to `main`.
+
+- **2026-09-21 — Phase 24 defined: `find-route`, a CLI from a circuit's
+  name to a stored Porto route; it absorbs Phase 19 and reverses Phase 19's
+  "source-finding stays manual" decision.** Requested by the user: say a
+  circuit's name, have the tool fetch its data and do what is needed to find
+  its mapping onto Porto offline. Read as: stage 1 fetches and adds the
+  circuit, stage 2 is Phase 22's generator; the network is used only for
+  stage 1's one-time fetch (the matching runs against the bundled street
+  network, and nothing changes at runtime). Spec:
+  [specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md).
+  Live probes against Overpass and Wikidata *before* writing it changed the
+  design:
+  - a planet-wide `name~` regex on Overpass returned nothing usable in two
+    minutes, while the same question bounded to 3.5 km answered in ~1 s — so
+    the name is resolved to coordinates on **Wikidata first**, and Overpass is
+    only queried around them (or by exact `wikidata=` tag);
+  - Wikidata also supplies the official length (P2043, layout-history
+    qualifiers present, so the statement is *chosen*, not taken blindly),
+    which is what makes an automatic source choice checkable at all;
+  - Monza's OSM relation (`type=circuit`, `wikidata=Q171417`) holds 20 ways
+    plus a pit lane, with the banked ovals, a high-speed ring and a junior
+    circuit alongside — the F1 lap is one ring *inside* that set, so the tool
+    **enumerates cycles and picks by length match** (within 5 %, with a 3-point
+    margin over the runner-up) instead of stitching "all members"; when it
+    cannot decide it lists the candidates and exits, never guesses;
+  - the public Overpass endpoint answered 406 without a `User-Agent` and 504
+    under back-to-back requests — so User-Agent, backoff, a fallback mirror
+    and a gitignored response cache are requirements.
+  Phase 19 is marked `superseded` (its spec kept for reasoning); the queued
+  full-calendar batch now runs on this command. Phase 23 remains the work in
+  progress; Phase 24 is queued after it. Constants (`PICK_TOLERANCE`,
+  `PICK_MARGIN`, the Wikidata class filter, the fallback mirror) are starting
+  values to be confirmed by the acceptance runs, not measured yet.
 
 - **2026-09-21 — Phase 22 (route generator) implemented, real data
   generated for all three bundled circuits, every one's top route clears
