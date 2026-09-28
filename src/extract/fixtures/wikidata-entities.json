@@ -1,0 +1,559 @@
+{
+ "entities": {
+  "Q171400": {
+   "id": "Q171400",
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "Circuit de Monaco"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "street circuit\u00a0around the harbour of the principality of Monaco"
+    }
+   },
+   "claims": {
+    "P31": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 926439,
+         "id": "Q926439"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P625": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "latitude": 43.734722222222,
+         "longitude": 7.4205555555556,
+         "altitude": null,
+         "precision": null,
+         "globe": "http://www.wikidata.org/entity/Q2"
+        },
+        "type": "globecoordinate"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P2043": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3337",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "normal",
+      "qualifiers": {
+       "P580": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+2015-00-00T00:00:00Z"
+          }
+         }
+        }
+       ]
+      }
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3145",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "deprecated",
+      "qualifiers": {
+       "P580": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1955-00-00T00:00:00Z"
+          }
+         }
+        }
+       ],
+       "P582": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1972-00-00T00:00:00Z"
+          }
+         }
+        }
+       ]
+      }
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3278",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "deprecated",
+      "qualifiers": {
+       "P580": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1973-00-00T00:00:00Z"
+          }
+         }
+        }
+       ],
+       "P582": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1975-00-00T00:00:00Z"
+          }
+         }
+        }
+       ]
+      }
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3312",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "deprecated",
+      "qualifiers": {
+       "P580": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1976-00-00T00:00:00Z"
+          }
+         }
+        }
+       ],
+       "P582": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1985-00-00T00:00:00Z"
+          }
+         }
+        }
+       ]
+      }
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3328",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3328",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "deprecated",
+      "qualifiers": {
+       "P580": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1986-00-00T00:00:00Z"
+          }
+         }
+        }
+       ],
+       "P582": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+1996-00-00T00:00:00Z"
+          }
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "Q171417": {
+   "id": "Q171417",
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "Monza Circuit"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "motorsport racetrack in Monza, Italy"
+    }
+   },
+   "claims": {
+    "P31": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 2338524,
+         "id": "Q2338524"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 1497375,
+         "id": "Q1497375"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P625": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "latitude": 45.620555555556,
+         "longitude": 9.2894444444444,
+         "altitude": null,
+         "precision": null,
+         "globe": "http://www.wikidata.org/entity/Q2"
+        },
+        "type": "globecoordinate"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P2043": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+5793",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "normal",
+      "qualifiers": {
+       "P580": [
+        {
+         "snaktype": "value",
+         "datavalue": {
+          "value": {
+           "time": "+2000-00-00T00:00:00Z"
+          }
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "Q66712033": {
+   "id": "Q66712033",
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "Circuit de Monaco Grand Prix Circuit (2015-)"
+    }
+   },
+   "descriptions": {},
+   "claims": {
+    "P31": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 66436502,
+         "id": "Q66436502"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P625": [],
+    "P2043": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+3.337",
+         "unit": "http://www.wikidata.org/entity/Q828224"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "normal"
+     }
+    ]
+   }
+  },
+  "Q235": {
+   "id": "Q235",
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "Monaco"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "microstate in Western Europe"
+    }
+   },
+   "claims": {
+    "P31": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 3624078,
+         "id": "Q3624078"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 179164,
+         "id": "Q179164"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 208500,
+         "id": "Q208500"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 133442,
+         "id": "Q133442"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 902814,
+         "id": "Q902814"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     },
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 6256,
+         "id": "Q6256"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P625": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "latitude": 43.73111111111111,
+         "longitude": 7.42,
+         "altitude": null,
+         "precision": 0.0002777777777777778,
+         "globe": "http://www.wikidata.org/entity/Q2"
+        },
+        "type": "globecoordinate"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P2043": []
+   }
+  },
+  "Q172851": {
+   "id": "Q172851",
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "Spa-Francochamps Circuit"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "motorsport race track near Spa, Belgium"
+    }
+   },
+   "claims": {
+    "P31": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 2338524,
+         "id": "Q2338524"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P625": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "latitude": 50.437222222222,
+         "longitude": 5.9713888888889,
+         "altitude": null,
+         "precision": null,
+         "globe": "http://www.wikidata.org/entity/Q2"
+        },
+        "type": "globecoordinate"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P2043": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "amount": "+7003",
+         "unit": "http://www.wikidata.org/entity/Q11573"
+        },
+        "type": "quantity"
+       }
+      },
+      "rank": "normal"
+     }
+    ]
+   }
+  }
+ }
+}

@@ -23,12 +23,18 @@ npm run dev        # local dev server
 npm run test       # watch tests
 npm run test:run   # run tests once (used by CI)
 npm run build      # type-check (tsc --noEmit) + production build to dist/
+npm run find-route -- "Monza"     # dev-only: circuit name -> circuits.json + stored Porto route (Phase 24)
+npm run generate-route -- <id>    # dev-only: just the route generator for a bundled circuit (Phase 22)
 ```
+
+`find-route` uses the network only to fetch a new circuit (Wikidata + Overpass,
+cached in the gitignored `.cache/find-route/`); the shipped site never fetches.
 
 ## Layout
 
 - `src/` — application code and colocated `*.test.ts` files.
-- `src/data/` — bundled data (`circuits.json`).
+- `src/data/` — bundled data (`circuits.json`, `routes/`).
+- `src/extract/` — dev-only pure modules behind `find-route` (Wikidata/Overpass parsing, ring finding); not imported by the app. `scripts/` — the CLIs.
 - `docs/` — `VISION.md`, `ROADMAP.md`, and `specs/` (one spec per phase).
 - `.github/workflows/deploy.yml` — runs tests + build on every push/PR, and
   deploys `dist/` to GitHub Pages from `main`.

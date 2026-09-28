@@ -1,6 +1,6 @@
 # Spec — Phase 24: `find-route` — from a circuit's name to a stored Porto route
 
-Status: `todo`
+Status: `done` (implemented 2026-09-28 — see *Outcome* at the end)
 Depends on: [phase-22-route-generator.md](phase-22-route-generator.md) (the
 generator this command drives), [phase-1-geometry.md](phase-1-geometry.md)
 (`circuits.json`, projection)
@@ -354,3 +354,75 @@ trimmed copies of the real responses above.
   tighten `PICK_MARGIN`. Measure, don't assume.
 - **Is the fallback Overpass mirror actually reachable and equivalent?**
   Confirm at implementation; swap or drop it if not.
+
+## Outcome (2026-09-28)
+
+Implemented as specified, with the departures below — each forced by what the
+live services actually did, and each covered by a test. Live requests were made
+against Wikidata and Overpass while building it.
+
+**Departures from this spec**
+
+- **Overpass is queried by bounding box, not `around`.** Even the simplest
+  `way(around:3500,…)["highway"="raceway"]` answered 504 in 9–14 s, while the same
+  question as a bbox answered in ~3 s. The radius is now the half-side of a square.
+  The `wikidata=` relation clause is *also* bounded — `rel(bw.near)["wikidata"="Q…"]`,
+  i.e. only among relations containing a raceway way found in the box — because
+  the planet-wide `rel["wikidata"="Q…"]` 504'd too (about 1 s once bounded).
+  The query outputs `.ways >;` (recursing `.ways`, not the default set: the first
+  version lost nodes, caught by the fixture test).
+- **The name search is filtered by class inside Wikidata's own search**
+  (`list=search`, `srsearch="<name> haswbstatement:P31=<class>"`, once per class).
+  `wbsearchentities` never reached "Circuit de Monaco" from "Monaco" (the country,
+  a football club, a band come first). Classes: `Q2338524` (motorsport racing
+  track) and `Q926439` (street circuit) — `Q1497375`, which the probe saw on Monza,
+  is "architectural ensemble" and was left out. The `wbgetentities` filter (a
+  coordinate *and* a length) still applies, which also drops the per-layout
+  entities (`Q66436502`), which have no coordinate. Length statements: superseded
+  (end-time) **and `deprecated`-rank** ones are dropped, then the spec's rule.
+- **Pit-lane names.** The spec's "name containing *pit*" dropped Silverstone's
+  start/finish straight, which OSM names "National Pit Straight". The name rule is
+  now `pit lane`/`pitlane`, exactly `pit(s)`, or a name ending in `Pit`
+  ("Stowe Circuit Pit"); the role and `raceway=pit_lane`/`service=pit_lane` tags
+  still apply. (Found by the live Silverstone reproduction, not by reading.)
+- **Equivalent rings are one lap.** The spec's pick rule (best within 5 %, runner-up
+  ≥ 3 points worse) refused every real circuit, because OSM holds several rings per
+  circuit that differ by a chicane variant or a doubled-up way: Catalunya 926
+  rings, five of them at 4675 m, 37–57 m apart. Rings that stay within
+  `EQUIVALENT_M = 60` m of each other everywhere are collapsed before the
+  margin is applied (60 m is inside the routes generator's own 100 m worst-deviation
+  bar). The result reports how many it collapsed.
+- **Relation tie-break.** If different laps remain within the margin, the best
+  still wins when it alone consists only of members of the circuit's
+  `wikidata`-tagged relation; the result says so. Otherwise: refusal, as specified.
+  (Not needed by any circuit tried once the collapse existed; kept because it is
+  the mapper's own statement of what the circuit is, and tested.)
+- **Modules added beyond the spec's list:** `extract/extract.ts` (stage 1 as a
+  pure function over an injected `getJson`; `applyExtraction` is the only writer
+  and validates first; `formatCircuits` reproduces `circuits.json` byte for byte,
+  tested; `provenanceRow`). `RingCandidate` gained `bridgedGapsM`/`allInRelation`.
+  A fallback Overpass mirror gets one attempt, not the backoff ladder; a 200 whose
+  body carries an Overpass `runtime error` remark is retried.
+- **Contact in the User-Agent** is the repository URL, not a personal address.
+
+**Reproduction check (live, `--dry-run --refresh`)**
+
+| circuit | source found | computed / official | vs bundled centreline |
+| --- | --- | --- | --- |
+| hungaroring | ways 231328650 + 1333262244 — the same two ways `circuits.schema.md` records | 4356 m / 4381 m (identical to today's) | mean 0.1 m, max 1.6 m |
+| silverstone | 30 ways from OSM's current data, starting at "National Pit Straight" | 5879 m / 5891 m | mean 1.4 m, max 37–45 m |
+| catalunya | 14 ways including 831804327 | 4665 m / 4675 m | mean 2.5 m, max 43–44 m |
+
+Silverstone's documented source (relation 51160 "Silverstone Grand Prix") no
+longer closes: its 26 usable ways leave a 350 m gap exactly where "National Pit
+Straight" belongs, so a relation-only extraction would find no ring at all. Wikidata's
+lengths have moved since 2026-09-09 (Catalunya 4675 m against the bundled 4657 m);
+the constants `PICK_TOLERANCE = 5 %` and `PICK_MARGIN = 3 points` were **not**
+changed: the next different lap is 3.6 % (Silverstone) and 3.1 % (Catalunya) off, so
+both clear the margin by under a point — tightening is unnecessary, and widening it
+would refuse Catalunya.
+
+**Monaco (expected refusal):** found on Wikidata as `Q171400` (3337 m) only through
+the class-filtered search; 43 raceway ways in OSM but they close into two rings of
+251 m and 172 m. Refused with exit 2 and a message pointing at street-circuit
+mapping; nothing written.
