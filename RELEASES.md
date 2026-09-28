@@ -8,6 +8,20 @@ Newest release first.
 
 ---
 
+## 0.15.1 — Baku City Circuit (2026-09-28)
+
+**Baku City Circuit is the fifth circuit.** Pick it on the main page like the
+others, and find it on the **Generated routes** page with three ready-made
+routes.
+
+- **As with Monza, none of the three routes reaches the bar, and the page says
+  so.** The best is 1.17× the circuit's length, strays 31 m from it on average
+  and 121 m at worst; each route is marked **Misses the bar** with the limits it
+  crosses. They are still runnable loops you can download as GPX.
+- Nothing changes for the other circuits.
+
+---
+
 ## 0.15.0 — Monza is here (2026-09-28)
 
 **Monza is the fourth circuit.** You can pick it on the main page like the

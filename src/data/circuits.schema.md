@@ -46,6 +46,7 @@ same lap. The `retrieved` date is the day of the fetch.
 | `silverstone` | Silverstone Circuit | [relation 51160](https://www.openstreetmap.org/relation/51160) "Silverstone Grand Prix" | F1 Grand Prix (Arena) | 82 | 5869 m / 5891 m |
 | `catalunya` | Circuit de Barcelona-Catalunya | [way 831804327](https://www.openstreetmap.org/way/831804327) (closed) | F1 (post-2023, no final chicane) | 75 | 4667 m / 4657 m |
 | `monza` | Monza Circuit | [relation 284565](https://www.openstreetmap.org/relation/284565) (20 ways) | F1 Grand Prix | 52 | 5787 m / 5793 m |
+| `baku-city` | Baku City Circuit | [relation 11266687](https://www.openstreetmap.org/relation/11266687) | F1 Grand Prix | 51 | 5961 m / 6003 m |
 
 Monaco was evaluated and dropped for this phase: its layout runs on public
 streets and is mapped in OSM as a mix of `highway=raceway` and ordinary street

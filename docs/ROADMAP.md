@@ -722,6 +722,18 @@ goal, not effort spent.
 
 Newest first. Each entry dated.
 
+- **2026-09-28 — Baku City Circuit added with `find-route`; like Monza, none of
+  its routes meets the bar.** OSM relation 11266687, 51 points, 5961 m computed /
+  6003 m official; route generation reached tier 2. The three stored routes:
+  #1 6987 m (1.17×), mean 31.3 m, max 121.4 m, retraced 3.2 %; #2 7295 m (1.22×),
+  mean 28.8 m, max 128.5 m; #3 7694 m (1.29×), mean 35.2 m, max 133.7 m. The
+  routes page shows all three as "Misses the bar". It is a street circuit, yet
+  `find-route` extracted a ring that passed the length check, so Baku is mapped
+  well enough — unlike Monaco. Worth noting for the batch: the two circuits added
+  since Phase 22 both miss the bar (mean ≈ 30 m, worst ≈ 120 m), which points at
+  the bar or the generator rather than at the circuits; the `passesBar` decision
+  (2026-09-21) should be settled before more are added.
+
 - **2026-09-28 — Phase 24 (`find-route`) implemented; verified live against
   Wikidata and Overpass; Monza added end to end; Monaco refused; the pick rule
   had to grow.** 497 tests pass (about 100 new, all offline against trimmed real
