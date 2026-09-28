@@ -25,8 +25,13 @@ function round(n: number, decimals: number): number {
   return Math.round(n * f) / f
 }
 
+/** "11.7 min (702.1s)": minutes first, the exact seconds in parentheses. */
+export function formatDuration(ms: number): string {
+  return `${(ms / 60_000).toFixed(1)} min (${(ms / 1000).toFixed(1)}s)`
+}
+
 function elapsed(startMs: number): string {
-  return `${((Date.now() - startMs) / 1000).toFixed(1)}s`
+  return formatDuration(Date.now() - startMs)
 }
 
 /**
@@ -52,12 +57,12 @@ export function generateAndWriteRoute(
   log('loading street network...')
   let t = Date.now()
   const network = loadStreetNetwork()
-  log(`street network loaded in ${elapsed(t)} (${network.ways.length} ways)`)
+  log(`street network loaded in ${elapsed(t)}, ${network.ways.length} ways`)
 
   log('building routable graph...')
   t = Date.now()
   const graph = buildStreetGraph(network.ways)
-  log(`graph built in ${elapsed(t)} (${graph.nodeCount} nodes)`)
+  log(`graph built in ${elapsed(t)}, ${graph.nodeCount} nodes`)
 
   log('rasterising orientation layers...')
   t = Date.now()
@@ -80,7 +85,7 @@ export function generateAndWriteRoute(
     bounds,
     layers,
     graph,
-    { onTierRun: (tier) => log(`tier ${tier} finished (${elapsed(t)} elapsed)`) },
+    { onTierRun: (tier) => log(`tier ${tier} finished after ${elapsed(t)}`) },
   )
   log(
     `generation finished in ${elapsed(t)} — escalationTier=${result.escalationTier}, ` +
