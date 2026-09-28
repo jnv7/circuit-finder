@@ -8,6 +8,29 @@ Newest release first.
 
 ---
 
+## 0.15.0 — Monza is here (2026-09-28)
+
+**Monza is the fourth circuit.** You can pick it on the main page like the
+others — drag it over Porto, rotate it, trace a route — and it is listed on the
+**Generated routes** page with three ready-made routes.
+
+- **Those routes are not good matches, and the page says so.** A Monza lap is
+  5.8 km with long straights, and Porto's streets fit it less well than the first
+  three circuits: the best route is 1.21× the circuit's length, strays 31 m from
+  it on average and 126 m at worst. Each of the three is marked **Misses the
+  bar**, with the exact limits it crosses. They are still runnable loops you can
+  download as GPX; they just are not as faithful to the circuit as Hungaroring's,
+  Silverstone's or Catalunya's.
+- Nothing else changes for the first three circuits.
+
+Behind the scenes, adding a circuit no longer needs manual work: one command
+looks a circuit up by name, fetches its outline from OpenStreetMap, and prepares
+its Porto routes. Monza was the first added that way. Monaco was tried and
+declined — its lap is mapped as ordinary streets, which the command will not
+guess at.
+
+---
+
 ## 0.14.0 — Ready-made Porto routes for each circuit, on a real map, with a GPX download (2026-09-21)
 
 **There is now a second page, "Generated routes", that simply shows you a

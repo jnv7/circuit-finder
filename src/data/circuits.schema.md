@@ -26,19 +26,32 @@ check only catches gross unit or ordering errors.
 ## Provenance
 
 All centrelines are normalised copies of OpenStreetMap geometry, © OpenStreetMap
-contributors, licensed **ODbL 1.0**. Retrieved **2026-09-09** via the Overpass
-API. The pipeline: fetch the circuit relation's member ways with geometry, drop
-pit-lane ways, stitch the remaining ways into a single ordered ring, project to
-local metres, simplify with Douglas–Peucker at a 2.5 m tolerance, and store back
-as `[lon, lat]` rounded to 6 decimals.
+contributors, licensed **ODbL 1.0**. The first three were retrieved
+**2026-09-09** via the Overpass API by a one-off, uncommitted pipeline; every
+circuit added since comes from `npm run find-route -- "<name>"`
+([Phase 24](../../docs/specs/phase-24-find-route-by-name.md)), which prints the
+row for the table below. Both do the same thing: take the raceway ways of the
+circuit, drop pit lanes, assemble the lap as one closed ring, project to local
+metres, simplify with Douglas–Peucker at a 2.5 m tolerance, and store back as
+`[lon, lat]` rounded to 6 decimals. `find-route` chooses the lap itself: it
+resolves the name on Wikidata (coordinate and official length), fetches the
+ways around it, finds every closed ring they form and takes the one whose
+length matches the official one — refusing, with the candidates listed, when it
+cannot tell. Rings that stay within 60 m of each other everywhere count as the
+same lap. The `retrieved` date is the day of the fetch.
 
 | id | name | OSM source | layout | points | computed / official |
 | --- | --- | --- | --- | --- | --- |
 | `hungaroring` | Hungaroring | [relation 284557](https://www.openstreetmap.org/relation/284557) (ways `1333262244` + `231328650`) | F1 Grand Prix | 70 | 4356 m / 4381 m |
 | `silverstone` | Silverstone Circuit | [relation 51160](https://www.openstreetmap.org/relation/51160) "Silverstone Grand Prix" | F1 Grand Prix (Arena) | 82 | 5869 m / 5891 m |
 | `catalunya` | Circuit de Barcelona-Catalunya | [way 831804327](https://www.openstreetmap.org/way/831804327) (closed) | F1 (post-2023, no final chicane) | 75 | 4667 m / 4657 m |
+| `monza` | Monza Circuit | [relation 284565](https://www.openstreetmap.org/relation/284565) (20 ways) | F1 Grand Prix | 52 | 5787 m / 5793 m |
 
 Monaco was evaluated and dropped for this phase: its layout runs on public
 streets and is mapped in OSM as a mix of `highway=raceway` and ordinary street
 ways with split carriageways, from which a single clean centreline could not be
 stitched reliably. It remains a roadmap candidate.
+`find-route` re-tried it on 2026-09-28 and refused, as designed: around the Wikidata
+coordinate OSM holds 43 `highway=raceway` ways but they close into only two tiny
+rings (251 m and 172 m against the official 3337 m) — the lap itself is ordinary
+streets. Nothing was written.

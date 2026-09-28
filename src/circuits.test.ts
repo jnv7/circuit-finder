@@ -46,9 +46,9 @@ function makeCircuit(overrides: Partial<Circuit> = {}): Circuit {
 }
 
 describe('loadCircuits', () => {
-  it('returns the three bundled circuits', () => {
+  it('returns the bundled circuits, the original three first (more are added by find-route)', () => {
     const circuits = loadCircuits()
-    expect(circuits.map((c) => c.id)).toEqual(['hungaroring', 'silverstone', 'catalunya'])
+    expect(circuits.map((c) => c.id).slice(0, 3)).toEqual(['hungaroring', 'silverstone', 'catalunya'])
   })
 
   it('round-trips through validateCircuits', () => {

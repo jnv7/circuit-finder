@@ -6,6 +6,34 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
+**2026-09-28 — Phase 24 shipped; current priority is the full-calendar batch.**
+[specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md) is
+implemented: `npm run find-route -- "<name>"` goes from a circuit's name to its
+circuit data (Wikidata + OpenStreetMap, appended to `circuits.json`) and its
+stored Porto route, in one command. Proven live: the three bundled circuits
+re-extract to within 1.6 m (Hungaroring) / 2.5 m mean (Catalunya) of what is
+bundled, **Monza was added end to end with a single command**, and Monaco was
+refused with a diagnostic and nothing written. See the decision log entry of
+this date, including the honest result for Monza: **none of its three routes
+meets the bar** (best: mean 31 m / max 126 m / 1.21×).
+
+Current priority is now the **full F1 calendar** ("Later" table below), run one
+circuit at a time with `find-route`. Start with a fresh check of the current
+season's circuits, do the permanent/park circuits first, and record each
+street circuit's outcome honestly (expect some to end up refused, like Monaco).
+Each new circuit costs ~10–25 minutes of generation and may miss the bar, as
+Monza did; that is a result to report, not a failure to hide.
+
+Still open, unchanged: the Phase 22 `passesBar` length-term defect (decision log
+2026-09-21; recommended fix is to make an out-of-band length term exceed 1, then
+regenerate — worth doing *before* the batch, since it changes ranking); the GPX
+check in the receiving app; the deploy smoke check's first real run; and
+Phase 18's button.
+
+<details>
+<summary>Previous priority (2026-09-21), superseded above but kept for
+context</summary>
+
 **2026-09-21 — Phase 23 shipped; current priority moves to Phase 24.**
 [specs/phase-23-routes-page.md](specs/phase-23-routes-page.md) is implemented:
 a second static page, `routes.html`, that looks up a circuit's Phase 22 routes,
@@ -32,6 +60,8 @@ but smaller now: `app/gpx.ts` already exists (written for Phase 23), so what
 remains is its button and wiring. The existing suggestion/skeleton page keeps
 working unchanged; whether to retire any of it is a later, separate decision
 now that the routes page can be used for real.
+
+</details>
 
 <details>
 <summary>Previous priority (2026-09-20), superseded above but kept for
@@ -629,17 +659,19 @@ the URL hash (`#silverstone/2`, `app/routesHash.ts`). The deploy smoke check
 now covers both pages. Two acceptance steps remain open (GPX in the receiving
 app; the deploy check's first real run) — see the decision log, 2026-09-21.
 
-### Phase 24 — `find-route`: from a circuit's name to a stored Porto route — `todo`
+### Phase 24 — `find-route`: from a circuit's name to a stored Porto route — `done`
 
 Spec: [specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md).
-`npm run find-route -- "Monza"`: reuse the circuit if bundled, otherwise
-resolve the name on Wikidata (coordinate + official length), fetch its track
-ways from Overpass around that coordinate, find the lap as the closed ring
-whose length matches the official one (refusing, with the candidates listed,
-when it cannot decide), simplify/validate/append to `circuits.json`; then run
-Phase 22's generator and write `src/data/routes/<id>.json`. Dev-only, network
-used only for the one-time fetch, all outputs committed static JSON. Supersedes
-Phase 19. Not yet implemented.
+`npm run find-route -- "Monza"`: reuse the circuit if bundled, otherwise resolve
+the name on Wikidata (class-filtered search; coordinate + official length),
+fetch its raceway ways from Overpass (bounding box), find every closed ring they
+form, take the one whose length matches the official one (rings within 60 m of
+each other count as one lap; refusing, with the candidates listed, when it
+cannot decide), simplify/validate/append to `circuits.json`; then run Phase 22's
+generator and write `src/data/routes/<id>.json`. Dev-only; the network is used
+only for the one-time fetch and cached in the gitignored `.cache/find-route/`;
+all outputs are committed static JSON. Supersedes Phase 19. Monza added (its
+routes miss the bar — see the decision log); Monaco refused.
 
 ### Later — classified by cost and benefit (2026-09-15)
 
@@ -689,6 +721,58 @@ goal, not effort spent.
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-09-28 — Phase 24 (`find-route`) implemented; verified live against
+  Wikidata and Overpass; Monza added end to end; Monaco refused; the pick rule
+  had to grow.** 497 tests pass (about 100 new, all offline against trimmed real
+  fixtures), `npm run build` passes. Full account in the spec's *Outcome*; the
+  decisions that matter:
+  - **The spec's probes were right about the network and wrong about the
+    remedy.** `around` filters 504'd even in their simplest form (bbox: ~3 s), and
+    the planet-wide `rel["wikidata"=…]` clause 504'd (bounded to relations that
+    contain a nearby raceway way: ~1 s). Wikidata's `wbsearchentities` never
+    reached "Circuit de Monaco" from "Monaco"; a class-filtered `list=search`
+    (`haswbstatement:P31=Q2338524|Q926439`) finds Monaco, Baku, Singapore,
+    Interlagos and Monza by their plain names. Wikidata's racetrack class list
+    is those two classes (`Q1497375`, seen on Monza, is "architectural
+    ensemble").
+  - **The reproduction check found three real problems, each fixed and tested:**
+    (1) the name rule for pit lanes dropped Silverstone's start/finish straight
+    ("National Pit Straight"); (2) the spec's "runner-up ≥ 3 points worse" rule
+    refused every circuit, because OSM holds many near-identical rings per
+    circuit (Catalunya: 926, five at 4675 m, 37–57 m apart) — rings within
+    `EQUIVALENT_M = 60` m of each other are now one lap, and a relation-only
+    tie-break exists for what remains; (3) Silverstone's documented source,
+    relation 51160, no longer closes (a 350 m gap where the pit straight
+    belongs), so a relation-only extraction would find nothing — the bbox
+    search finds the lap. Re-extractions vs the bundled centrelines: Hungaroring
+    mean 0.1 / max 1.6 m (same two ways as documented), Silverstone 1.4 / 37–45 m,
+    Catalunya 2.5 / 43–44 m; official lengths on Wikidata have moved since
+    2026-09-09 (Catalunya 4675 m vs bundled 4657 m). `PICK_TOLERANCE` (5 %) and
+    `PICK_MARGIN` (3 points) were not changed; the next different lap is 3.6 %
+    (Silverstone) and 3.1 % (Catalunya) off, so both clear the margin by under a
+    point.
+  - **Monza, end to end with one command** (`find-route "Monza"`): relation
+    284565, 20 ways, 52 points, 5787 m computed / 5793 m official; route
+    generation took 702 s and escalated to tier 2. **All three stored routes miss
+    the bar**, and the tool says so: #1 7494 m (1.30×), mean 34.0 m, max 109.9 m;
+    #2 6988 m (1.21×), mean 31.1 m, max 125.6 m; #3 7395 m (1.28×), mean 41.8 m,
+    max 139.3 m; retraced 0.5–3.2 %. The routes page shows them as "Misses the
+    bar". A 5.8 km circuit with long straights is a harder fit for Porto's street
+    network than the three earlier ones, which is a finding about the batch
+    ahead, not a defect of `find-route`. `routes.test.ts`'s stored-file checks
+    pass for it.
+  - **Monaco (expected refusal):** resolved on Wikidata (`Q171400`, 3337 m) but
+    OSM holds 43 raceway ways closing into two rings of 251 m and 172 m; refused
+    with exit 2 and a street-circuit hint; `circuits.json` untouched.
+  - **Safety properties, tested:** `applyExtraction` is the only writer and
+    validates the whole list first; a refusal or validation failure never calls
+    `write`; `formatCircuits` reproduces `circuits.json` byte for byte; a bundled
+    circuit skips stage 1 and makes no request (checked live: cache unchanged).
+  - **Left for a decision:** the `passesBar` length-term defect (still open from
+    2026-09-21) — recommended to fix before running the batch; and whether the
+    printed provenance row for `circuits.schema.md` should stay a manual paste
+    (it does today, as specified).
 
 - **2026-09-21 — Phase 23 (routes page) implemented and checked in a real
   browser; two acceptance steps remain open, and the page's tests found a
