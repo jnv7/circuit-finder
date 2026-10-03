@@ -125,18 +125,40 @@ describe('routes page', () => {
     expect(options.find((o) => o.value === 'catalunya')!.disabled).toBe(true)
   })
 
-  it('opens on the first available route, with route buttons, badge and plain-language metrics', async () => {
+  it('opens on the first available route, with route buttons and plain-language metrics', async () => {
     const c = await mount()
     expect(role<HTMLSelectElement>(c, 'circuit').value).toBe('hungaroring')
     expect(panel(c).querySelectorAll('[data-role="route"]')).toHaveLength(3)
     expect(selectedRank(c)).toBe('1')
-    expect(role(c, 'badge').textContent).toBe('Meets the bar')
+    const rank1 = panel(c).querySelector('[data-role="route"][data-rank="1"]')!
+    expect(rank1.querySelector('.badge--best')).not.toBeNull()
+    expect(rank1.textContent).toContain("21 m on average, 68 m at most · 1.12× the circuit's length")
     expect(panel(c).querySelector('[data-role="misses"]')).toBeNull()
     const text = role(c, 'metrics').textContent!
     expect(text).toContain('Length 4.90 km (1.12× the circuit)')
-    expect(text).toContain('Strays from the circuit by 21 m on average, 68 m at most')
     expect(text).toContain('Retraces 2 % of its length')
     expect(text).toContain('Shape distance 82 m')
+  })
+
+  it('shows every route’s own real deviation numbers in the picker, not just the selected one', async () => {
+    const c = await mount()
+    const rank2 = panel(c).querySelector('[data-role="route"][data-rank="2"]')!
+    expect(rank2.textContent).toContain("21 m on average, 68 m at most · 1.13× the circuit's length")
+    const rank3 = panel(c).querySelector('[data-role="route"][data-rank="3"]')!
+    expect(rank3.textContent).toContain("35 m on average, 166 m at most · 1.12× the circuit's length")
+  })
+
+  it('marks rank 1 as Best in the picker, regardless of which route is selected', async () => {
+    const c = await mount()
+    const badgeCount = () => panel(c).querySelectorAll('.badge--best').length
+    const bestRank = () => panel(c).querySelector('[data-role="route"].route-btn--best')?.getAttribute('data-rank')
+    expect(badgeCount()).toBe(1)
+    expect(bestRank()).toBe('1')
+
+    panel(c).querySelector<HTMLElement>('[data-role="route"][data-rank="3"]')!.click()
+    await flush()
+    expect(badgeCount()).toBe(1)
+    expect(bestRank()).toBe('1')
   })
 
   it('draws the route, the dashed circuit outline and a start marker on the map', async () => {
@@ -182,7 +204,6 @@ describe('routes page', () => {
     panel(c).querySelector<HTMLElement>('[data-role="route"][data-rank="3"]')!.click()
     await flush()
     expect(selectedRank(c)).toBe('3')
-    expect(role(c, 'badge').textContent).toBe('Misses the bar')
     expect(missLines(c)).toEqual(['mean 35 m, limit 30 m', 'longest deviation 166 m, limit 100 m'])
     // Still drawn — nothing is hidden for failing.
     expect(byStroke(c, ROUTE_STROKE)).toHaveLength(1)
@@ -376,9 +397,11 @@ describe('committed route files, on the page', () => {
       select.dispatchEvent(new Event('change'))
       await flush()
       for (const route of file.routes) {
-        panel(c).querySelector<HTMLElement>(`[data-role="route"][data-rank="${route.rank}"]`)!.click()
+        const btn = panel(c).querySelector<HTMLElement>(`[data-role="route"][data-rank="${route.rank}"]`)!
+        btn.click()
         await flush()
-        expect(role(c, 'badge').textContent).toMatch(/the bar$/)
+        expect(btn.querySelector('.route-btn__title')!.textContent).toMatch(/the bar$/)
+        expect(btn.querySelector('.badge--best') !== null).toBe(route.rank === 1)
         expect(byStroke(c, ROUTE_STROKE)).toHaveLength(1)
         expect(byStroke(c, OUTLINE_STROKE)).toHaveLength(1)
       }

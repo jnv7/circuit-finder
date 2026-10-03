@@ -58,10 +58,10 @@ jobs:
           set -euo pipefail
           BASE="${{ steps.deployment.outputs.page_url }}"
           BASE="${BASE%/}/"
-          # Both entry points (the tool and, since Phase 23, the routes page):
-          # a second entry is exactly the kind of change that can silently ship
-          # raw source.
-          for PAGE in "" "routes.html"; do
+          # Both entry points (the routes page, root since Phase 25, and the
+          # older manual tool at manual.html): a second entry is exactly the
+          # kind of change that can silently ship raw source.
+          for PAGE in "" "manual.html"; do
             URL="${BASE}${PAGE}"
             BODY="$(curl -sL "$URL")"
             if echo "$BODY" | grep -q '/src/'; then

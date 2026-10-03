@@ -15,6 +15,7 @@ import { addBasemap } from './basemap'
 import { downloadFile } from './download'
 import { routeGpx, routeGpxFilename } from './gpx'
 import { formatDistance, overlayLatLngs } from './overlay'
+import { pickerSummaryLine } from './routeSummary'
 import { formatHash, parseHash } from './routesHash'
 import type { RouteRef } from './routesHash'
 
@@ -138,14 +139,19 @@ export function createRoutesPage(
     picker.replaceChildren()
     for (const route of file.routes) {
       const misses = barMisses(route.metrics, file.generator.bar)
+      const best = route.rank === 1
       const btn = el(
         'button',
-        {
-          type: 'button',
-          className: `route-btn ${misses.length === 0 ? 'route-btn--ok' : 'route-btn--miss'}`,
-          textContent: `Route ${route.rank} · ${misses.length === 0 ? 'meets the bar' : 'misses the bar'}`,
-        },
+        { type: 'button', className: `route-btn ${misses.length === 0 ? 'route-btn--ok' : 'route-btn--miss'}${best ? ' route-btn--best' : ''}` },
         { 'data-role': 'route', 'data-rank': String(route.rank), 'aria-pressed': String(route.rank === selectedRank) },
+      )
+      if (best) btn.append(el('span', { className: 'badge badge--best', textContent: 'Best' }))
+      btn.append(
+        el('span', {
+          className: 'route-btn__title',
+          textContent: `Route ${route.rank} · ${misses.length === 0 ? 'meets the bar' : 'misses the bar'}`,
+        }),
+        el('span', { className: 'route-btn__metrics', textContent: pickerSummaryLine(route.metrics) }),
       )
       btn.addEventListener('click', () => {
         if (current) void select({ circuitId: current.circuit.id, rank: route.rank })
@@ -159,11 +165,6 @@ export function createRoutesPage(
     const misses = barMisses(m, file.generator.bar)
     details.replaceChildren()
 
-    const badge = el('div', {
-      className: `badge ${misses.length === 0 ? 'badge--ok' : 'badge--miss'}`,
-      textContent: misses.length === 0 ? 'Meets the bar' : 'Misses the bar',
-    }, { 'data-role': 'badge' })
-    details.append(badge)
     if (misses.length > 0) {
       const missList = el('ul', { className: 'misses' }, { 'data-role': 'misses' })
       for (const miss of misses) missList.append(el('li', { textContent: miss }))
@@ -173,7 +174,6 @@ export function createRoutesPage(
     const list = el('ul', { className: 'metrics' }, { 'data-role': 'metrics' })
     for (const line of [
       `Length ${formatDistance(m.lengthM)} (${m.lengthRatio.toFixed(2)}× the circuit)`,
-      `Strays from the circuit by ${Math.round(m.meanDeviationM)} m on average, ${Math.round(m.maxDeviationM)} m at most`,
       `Retraces ${formatPercent(m.retracedFraction)} of its length`,
     ]) {
       list.append(el('li', { textContent: line }))

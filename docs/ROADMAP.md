@@ -6,6 +6,26 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
+**2026-10-03 — Phase 25 shipped; current priority is deciding whether to widen
+the Porto street-network mesh.** [specs/phase-25-routes-page-primary.md](specs/phase-25-routes-page-primary.md)
+is implemented: the routes page is now the site root (`manual.html` holds the
+older drag/rotate tool), and the route picker shows every alternative's real
+deviation numbers up front with a "Best" badge on the top-ranked one — no more
+clicking in to see how close a failing route actually got. See the decision
+log entry of this date for what was deliberately deferred: widening
+`porto-streets.json` north/east/south (Matosinhos/Maia, Gondomar,
+Espinho/Silvalde) needs its own spec addressing the bundle-size budget and
+possibly the "no runtime fetch" principle, and is the next thing to scope —
+not started yet.
+
+Also still open: the full F1 calendar batch ("Later" table below); the GPX
+check in the receiving app; the deploy smoke check's first real run on the new
+entry points; and Phase 18's button.
+
+<details>
+<summary>Previous priority (2026-10-03, Phase 22 fix), superseded above but
+kept for context</summary>
+
 **2026-10-03 — Phase 22 `passesBar` defect fixed; current priority returns to
 the full-calendar batch.** See the decision log entry of this date: the
 length-term normalisation bug (open since 2026-09-21) is fixed and all five
@@ -21,6 +41,8 @@ Monza did; that is a result to report, not a failure to hide.
 
 Still open, unchanged: the GPX check in the receiving app; the deploy smoke
 check's first real run; and Phase 18's button.
+
+</details>
 
 <details>
 <summary>Previous priority (2026-09-28), superseded above but kept for
@@ -685,6 +707,29 @@ only for the one-time fetch and cached in the gitignored `.cache/find-route/`;
 all outputs are committed static JSON. Supersedes Phase 19. Monza added (its
 routes miss the bar — see the decision log); Monaco refused.
 
+### Phase 25 — Routes page becomes the primary entry; clearer best-alternative picker — `done`
+
+Spec: [specs/phase-25-routes-page-primary.md](specs/phase-25-routes-page-primary.md).
+Presentation only, no generator/data changes. Two bundled changes:
+
+- **Entry-point swap:** the routes lookup is now served at the site root
+  (`index.html`/`src/routesMain.ts`); the manual drag/rotate tool moved to
+  `manual.html` (same `src/main.ts`, unchanged behaviour) and is one plain link
+  away in each direction. `vite.config.ts` and the deploy smoke check updated
+  to match.
+- **Picker clarity:** the route picker (`src/app/routesPage.ts`) now shows
+  every stored alternative's real deviation numbers (`src/app/routeSummary.ts`,
+  a new pure `pickerSummaryLine`) directly in its button, with real ok/miss
+  color tinting (previously declared in CSS class names but never actually
+  styled) and a "Best" badge on the top-ranked alternative — independent of
+  pass/fail, so a circuit where every route misses the bar (Monza, Baku) still
+  shows which one came closest, and by how much, without clicking in. The
+  selected route's detail panel dropped its now-redundant badge and "Strays
+  from the circuit by..." line (both now shown per-route in the picker itself).
+- See the decision log entry of this date for the two things this phase
+  deliberately did **not** do: delete the manual tool, or widen the Porto
+  street-network mesh.
+
 ### Later — classified by cost and benefit (2026-09-15)
 
 Not a commitment list — a rated menu, reassessed as real usage (and the
@@ -733,6 +778,43 @@ goal, not effort spent.
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-10-03 — Phase 25 shipped: routes page is now the site root; the route
+  picker shows real deviation numbers and a "Best" marker per circuit; the
+  manual tool and the street-mesh question were deliberately left alone.**
+  Functionally, Phase 22-24's route-generation pipeline is considered done;
+  this phase is a front-end pass on top of it, prompted by the user judging the
+  old entry page (the manual drag/rotate tool) to no longer earn its place now
+  that the routes lookup works well, and by the picker's binary "meets/misses
+  the bar" being unhelpful for circuits like Monza and Baku where every stored
+  alternative fails — there was no way to see which one came closest without
+  clicking into each. See [specs/phase-25-routes-page-primary.md](specs/phase-25-routes-page-primary.md).
+  Two decisions worth recording:
+  - **The manual tool was kept, not deleted**, despite an initial instruction
+    to remove it. `CLAUDE.md`/`VISION.md` describe the product as moving and
+    rotating circuits *by hand*; deleting it would have changed the product's
+    declared identity, and it is currently the only way to hand-adjust a
+    placement for a circuit the automatic matcher can't clear the bar for
+    (Monza, Baku today). It now lives at `manual.html`, linked from the routes
+    page, rather than being the default entry.
+  - **Widening the bundled Porto street-network mesh was raised in the same
+    conversation (north to Matosinhos/Maia, east to Gondomar, south to
+    Espinho/Silvalde via Gaia) and deliberately deferred**, not folded into
+    this phase. `porto-streets.json` is a single hand-generated file already
+    near its bundle-size budget (reshaped once before to fit it), there is no
+    in-repo regeneration script, and this exact expansion was already flagged
+    in the "Low priority" table below as "don't start without an explicit
+    scope change from the user — evaluate cost/architecture together." That
+    evaluation (new size budget, whether to keep one bundled file or
+    reconsider the "no runtime fetch" principle, whether to finally write a
+    regeneration script) is the next thing to scope, as its own phase.
+  - Implementation: `index.html`/`routes.html` swapped content (`routes.html`
+    deleted, its content is now `index.html`; the old `index.html` is now
+    `manual.html`), `vite.config.ts` and the deploy smoke check updated to
+    match, a new pure `src/app/routeSummary.ts` (`pickerSummaryLine`) feeds the
+    picker's per-route numbers, and `renderDetails` dropped its now-redundant
+    badge and "Strays from the circuit by..." line. `npm run build` and
+    `npm run test:run` (507/507) pass.
 
 - **2026-10-03 — Phase 22 `passesBar` length-term defect fixed (option (b) from
   2026-09-21) and all five circuits regenerated.** `route/metrics.ts`'s

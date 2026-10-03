@@ -8,6 +8,23 @@ Newest release first.
 
 ---
 
+## 0.16.0 — Generated routes is now the home page (2026-10-03)
+
+**Visiting the site now takes you straight to the Generated routes page** — pick
+a circuit, see its ready-made loop through Porto, download it as GPX. The older
+manual drag-and-rotate tool still works exactly as before; it's one click away
+at **Manual tool →**, for circuits where you'd rather place the loop yourself.
+
+**The route picker now shows real numbers for every alternative, not just the
+one you've clicked on.** Each of a circuit's up to three routes shows its own
+average/worst deviation and how its length compares to the circuit's, right in
+the list — and the closest-fitting one is marked **Best**, even for circuits
+like Monza and Baku where none of them reaches the acceptance bar yet. You can
+now see at a glance which alternative is worth trying, instead of three
+identical-looking "misses the bar" entries.
+
+---
+
 ## 0.15.2 — A more honest "meets the bar" (2026-10-03)
 
 Fixed a bug in how a generated route's length was judged against the
