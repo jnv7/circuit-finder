@@ -152,8 +152,10 @@ export function computeRouteMetrics(
 
 /** Each bar term as a multiple of its limit — 0 comfortably inside, 1 exactly
  *  at the limit, growing beyond it. The length ratio is two-sided (a range,
- *  not a ceiling): 0 anywhere inside `[ratioLo, ratioHi]`, else how far
- *  outside as a fraction of the boundary it crossed. */
+ *  not a ceiling): 0 anywhere inside `[ratioLo, ratioHi]`, else `1 +` how far
+ *  outside as a fraction of the boundary it crossed, so leaving the band at
+ *  all already exceeds 1 (Phase 22 defect, fixed 2026-10-02; see the ROADMAP
+ *  decision log — the old formula stayed `<= 1` for any ratio up to 2.4). */
 export function barTerms(metrics: RouteMetrics, bar: Bar = DEFAULT_BAR): {
   meanRatio: number
   maxRatio: number
@@ -164,8 +166,8 @@ export function barTerms(metrics: RouteMetrics, bar: Bar = DEFAULT_BAR): {
   const maxRatio = metrics.maxDeviationM / bar.maxM
   const retraceRatio = metrics.retracedFraction / bar.retrace
   let lengthTerm = 0
-  if (metrics.lengthRatio < bar.ratioLo) lengthTerm = (bar.ratioLo - metrics.lengthRatio) / bar.ratioLo
-  else if (metrics.lengthRatio > bar.ratioHi) lengthTerm = (metrics.lengthRatio - bar.ratioHi) / bar.ratioHi
+  if (metrics.lengthRatio < bar.ratioLo) lengthTerm = 1 + (bar.ratioLo - metrics.lengthRatio) / bar.ratioLo
+  else if (metrics.lengthRatio > bar.ratioHi) lengthTerm = 1 + (metrics.lengthRatio - bar.ratioHi) / bar.ratioHi
   return { meanRatio, maxRatio, lengthTerm, retraceRatio }
 }
 

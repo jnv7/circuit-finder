@@ -8,6 +8,23 @@ Newest release first.
 
 ---
 
+## 0.15.2 — A more honest "meets the bar" (2026-10-03)
+
+Fixed a bug in how a generated route's length was judged against the
+acceptance bar: a route noticeably too long could be marked as meeting the
+bar even though the **Generated routes** page already correctly showed it as
+missing. All five circuits' stored routes were regenerated against the fix.
+
+- **Catalunya's second route is now a different, better-fitting one** — the
+  old one was slightly too long for what it claimed; the new one (1.18× the
+  circuit's length, 24 m mean / 94 m max deviation) genuinely sits inside the
+  bar.
+- Hungaroring and Baku City are unchanged. Silverstone's and Monza's routes
+  shifted only slightly (same ones kept, nearly the same shape) — nothing
+  that changes how they're judged.
+
+---
+
 ## 0.15.1 — Baku City Circuit (2026-09-28)
 
 **Baku City Circuit is the fifth circuit.** Pick it on the main page like the

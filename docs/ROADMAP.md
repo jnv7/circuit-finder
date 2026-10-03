@@ -6,6 +6,26 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
+**2026-10-03 — Phase 22 `passesBar` defect fixed; current priority returns to
+the full-calendar batch.** See the decision log entry of this date: the
+length-term normalisation bug (open since 2026-09-21) is fixed and all five
+circuits regenerated. This was the one item flagged as worth doing *before*
+the batch, so nothing more blocks it.
+
+Current priority is the **full F1 calendar** ("Later" table below), run one
+circuit at a time with `find-route`. Start with a fresh check of the current
+season's circuits, do the permanent/park circuits first, and record each
+street circuit's outcome honestly (expect some to end up refused, like Monaco).
+Each new circuit costs ~10–25 minutes of generation and may miss the bar, as
+Monza did; that is a result to report, not a failure to hide.
+
+Still open, unchanged: the GPX check in the receiving app; the deploy smoke
+check's first real run; and Phase 18's button.
+
+<details>
+<summary>Previous priority (2026-09-28), superseded above but kept for
+context</summary>
+
 **2026-09-28 — Phase 24 shipped; current priority is the full-calendar batch.**
 [specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md) is
 implemented: `npm run find-route -- "<name>"` goes from a circuit's name to its
@@ -17,18 +37,10 @@ refused with a diagnostic and nothing written. See the decision log entry of
 this date, including the honest result for Monza: **none of its three routes
 meets the bar** (best: mean 31 m / max 126 m / 1.21×).
 
-Current priority is now the **full F1 calendar** ("Later" table below), run one
-circuit at a time with `find-route`. Start with a fresh check of the current
-season's circuits, do the permanent/park circuits first, and record each
-street circuit's outcome honestly (expect some to end up refused, like Monaco).
-Each new circuit costs ~10–25 minutes of generation and may miss the bar, as
-Monza did; that is a result to report, not a failure to hide.
+Still open at the time, since resolved above: the Phase 22 `passesBar`
+length-term defect (decision log 2026-09-21).
 
-Still open, unchanged: the Phase 22 `passesBar` length-term defect (decision log
-2026-09-21; recommended fix is to make an out-of-band length term exceed 1, then
-regenerate — worth doing *before* the batch, since it changes ranking); the GPX
-check in the receiving app; the deploy smoke check's first real run; and
-Phase 18's button.
+</details>
 
 <details>
 <summary>Previous priority (2026-09-21), superseded above but kept for
@@ -721,6 +733,28 @@ goal, not effort spent.
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-10-03 — Phase 22 `passesBar` length-term defect fixed (option (b) from
+  2026-09-21) and all five circuits regenerated.** `route/metrics.ts`'s
+  `barTerms` normalised the out-of-band length term by the boundary it
+  crossed, so any ratio up to 2.4× still scored `<= 1`; it now adds `1 +` the
+  overage, so leaving `[ratioLo, ratioHi]` at all already fails the bar — a
+  property test (`src/app/barMisses.test.ts`) now checks agreement between
+  `barMisses` and `passesBar` over the whole ratio range, not just inside the
+  band, and `metrics.test.ts` checks the boundary directly. Regenerated with
+  `npm run generate-route` (no network; offline against the bundled street
+  graph): **Hungaroring and Baku City are byte-identical except the date** (no
+  ranking change); **Catalunya's second route changed** — the old one
+  (`lengthRatio` 1.201, wrongly stored `passesBar: true`, the one mismatch the
+  2026-09-21 entry found) was replaced by a genuinely in-band route
+  (`lengthRatio` 1.182, mean 23.8 m, max 94.3 m); **Silverstone's and Monza's
+  passing/failing routes changed only slightly in shape** (e.g. Silverstone's
+  kept route: `lengthRatio` 1.148→1.141, mean 29.8→29.9 m), with the same
+  pass/fail outcome per route. `npm run build` and the full test suite
+  (500/500) pass. One generation run (Silverstone) straddled the machine
+  sleeping overnight — wall-clock time in its log (544 min) is inflated by
+  that gap; actual CPU time was ~8 minutes, confirmed by sampling the live
+  process mid-run rather than guessing from elapsed time alone.
 
 - **2026-09-28 — Baku City Circuit added with `find-route`; like Monza, none of
   its routes meets the bar.** OSM relation 11266687, 51 points, 5961 m computed /

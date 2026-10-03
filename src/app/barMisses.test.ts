@@ -79,15 +79,16 @@ describe('barMisses', () => {
   })
 
   it('reads the length band literally: 1.5× the circuit is a miss', () => {
-    // The generator's own `passesBar` is lenient here (Phase 22 defect, see
-    // the ROADMAP decision log of 2026-09-21); this page is not.
+    // Also the generator's own passesBar, now that the Phase 22 length-term
+    // defect is fixed (see the ROADMAP decision log of 2026-09-21/2026-10-02).
     expect(barMisses({ ...GOOD, lengthRatio: 1.5 }, BAR)).toHaveLength(1)
+    expect(passesBar({ ...GOOD, lengthRatio: 1.5 }, BAR)).toBe(false)
   })
 
-  it('agrees with the generator’s own passesBar wherever the length is inside its band', () => {
+  it('agrees with the generator’s own passesBar for any length ratio', () => {
     const metric = fc.record({
       lengthM: fc.constant(5000),
-      lengthRatio: fc.double({ min: BAR.ratioLo, max: BAR.ratioHi, noNaN: true }),
+      lengthRatio: fc.double({ min: 0, max: 3, noNaN: true }),
       meanDeviationM: fc.double({ min: 0, max: 80, noNaN: true }),
       maxDeviationM: fc.double({ min: 0, max: 250, noNaN: true }),
       frechetM: fc.constant(100),

@@ -1,10 +1,9 @@
 // Plain wording for *how* a stored route misses the acceptance bar, so a route
 // that fails is shown honestly with its real figures and the limit it crossed
 // (Phase 23). Pure. The bar is read literally: every term inside its stated
-// limit, the length ratio inside `[ratioLo, ratioHi]`. That matches
-// `route/metrics.ts`'s `passesBar` everywhere except one Phase 22 defect (its
-// length term is normalised by the boundary it crossed, so a route up to 2.4×
-// the circuit's length "passes") — see the ROADMAP decision log, 2026-09-21.
+// limit, the length ratio inside `[ratioLo, ratioHi]`. That now matches
+// `route/metrics.ts`'s `passesBar` everywhere (the Phase 22 length-term defect
+// was fixed 2026-10-02; see the ROADMAP decision log, 2026-09-21).
 // Only types are imported, so the routes page does not bundle the generator.
 import type { RouteEntry, RouteFile } from '../routes'
 

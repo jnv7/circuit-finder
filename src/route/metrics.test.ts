@@ -3,7 +3,7 @@ import type { RouteLeg } from '../app/trace'
 import type { Point } from '../geometry/types'
 import { buildStreetGraph } from '../graph'
 import type { Street } from '../streets'
-import { discreteFrechet, retracedFraction, worstRatio, DEFAULT_BAR } from './metrics'
+import { barTerms, discreteFrechet, passesBar, retracedFraction, worstRatio, DEFAULT_BAR } from './metrics'
 import type { RouteMetrics } from './metrics'
 
 describe('discreteFrechet', () => {
@@ -104,5 +104,20 @@ describe('worstRatio', () => {
   it('a metric right at a limit scores exactly 1 on that term', () => {
     const atMeanLimit: RouteMetrics = { ...goodMetrics, meanDeviationM: DEFAULT_BAR.meanM }
     expect(worstRatio(atMeanLimit, DEFAULT_BAR)).toBeCloseTo(1, 6)
+  })
+
+  it('a length ratio just outside the band already exceeds 1 (Phase 22 defect, fixed 2026-10-02)', () => {
+    const justOver: RouteMetrics = { ...goodMetrics, lengthRatio: DEFAULT_BAR.ratioHi + 0.001 }
+    expect(barTerms(justOver, DEFAULT_BAR).lengthTerm).toBeGreaterThan(1)
+    expect(passesBar(justOver, DEFAULT_BAR)).toBe(false)
+
+    const justUnder: RouteMetrics = { ...goodMetrics, lengthRatio: DEFAULT_BAR.ratioLo - 0.001 }
+    expect(barTerms(justUnder, DEFAULT_BAR).lengthTerm).toBeGreaterThan(1)
+    expect(passesBar(justUnder, DEFAULT_BAR)).toBe(false)
+
+    // A ratio that used to "pass" under the old boundary-normalised formula
+    // (up to 2.4x for ratioHi = 1.2) must now fail.
+    const oldFalsePositive: RouteMetrics = { ...goodMetrics, lengthRatio: 1.6 }
+    expect(passesBar(oldFalsePositive, DEFAULT_BAR)).toBe(false)
   })
 })
