@@ -192,7 +192,12 @@ export function createRoutesPage(
 
     const notes = [`Generated ${file.generatedAt}`]
     if (file.scale !== 1) notes.push(`circuit scaled ×${file.scale}`)
-    details.append(el('p', { className: 'note', textContent: `${circuit.name} · ${notes.join(' · ')}` }))
+    details.append(
+      el('p', {
+        className: 'note',
+        textContent: `${circuit.name} (${formatDistance(circuit.officialLengthM)}) · ${notes.join(' · ')}`,
+      }),
+    )
   }
 
   function drawMap(circuit: MetricCircuit, file: RouteFile, route: RouteEntry): void {

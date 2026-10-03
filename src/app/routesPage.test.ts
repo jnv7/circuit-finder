@@ -138,6 +138,7 @@ describe('routes page', () => {
     expect(text).toContain('Length 4.90 km (1.12× the circuit)')
     expect(text).toContain('Retraces 2 % of its length')
     expect(text).toContain('Shape distance 82 m')
+    expect(role(c, 'details').textContent).toContain('Hungaroring (4.38 km) · Generated 2026-09-20')
   })
 
   it('shows every route’s own real deviation numbers in the picker, not just the selected one', async () => {
