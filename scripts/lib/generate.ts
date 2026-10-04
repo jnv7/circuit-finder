@@ -1,7 +1,9 @@
 // Stage 2 shared by `generate-route` and `find-route` (Phase 22, moved here in
-// Phase 24 with no behaviour change): run the offline route generator for one
-// circuit and write `src/data/routes/<circuitId>.json`. Nothing here runs in
-// the browser. See docs/specs/phase-22-route-generator.md.
+// Phase 24 with no behaviour change, regionalised in Phase 26): run the
+// offline route generator for one circuit against each requested region and
+// write one combined `src/data/routes/<circuitId>.json`. Nothing here runs in
+// the browser. See docs/specs/phase-22-route-generator.md and
+// docs/specs/phase-26-regional-search.md.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,13 +11,13 @@ import { toMetric } from '../../src/circuits'
 import type { Circuit } from '../../src/circuits'
 import { pathLength, resample } from '../../src/geometry/path'
 import { buildStreetGraph } from '../../src/graph'
-import { portoProjection } from '../../src/porto'
+import type { RegionId } from '../../src/regions'
 import { generateRoutesForCircuit } from '../../src/route/escalate'
 import { DEFAULT_BAR } from '../../src/route/metrics'
 import { buildOrientationLayers } from '../../src/route/raster'
 import { validateRouteFile } from '../../src/routes'
-import type { RouteFile } from '../../src/routes'
-import { loadStreetNetwork } from '../../src/streets'
+import type { RouteEntry, RouteFile } from '../../src/routes'
+import { loadRegionStreetNetwork } from './regionNetworks'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const LON_LAT_DECIMALS = 6
@@ -34,48 +36,39 @@ function elapsed(startMs: number): string {
   return formatDuration(Date.now() - startMs)
 }
 
-/**
- * Generate and write the routes of `circuitId`, which must be in `circuits`
- * (passed in, not re-read from the bundle, so a circuit added a moment ago by
- * `find-route` is visible). Returns the file it wrote.
- */
-export function generateAndWriteRoute(
-  circuits: readonly Circuit[],
-  circuitId: string,
+/** Run the generator for one circuit against one region. */
+function generateForRegion(
+  regionId: RegionId,
+  circuit: Circuit,
   scale: number,
   log: (msg: string) => void,
-): { file: RouteFile; path: string } {
-  const circuit = circuits.find((c) => c.id === circuitId)
-  if (!circuit) {
-    throw new Error(`Unknown circuit id "${circuitId}". Known ids: ${circuits.map((c) => c.id).join(', ')}`)
-  }
-
+): { routes: RouteEntry[]; poses: number; escalationTier: number; streetsAttribution: RouteFile['streets'] } {
+  const tag = `[${regionId}]`
   const metric = toMetric(circuit)
   const circuitSamplesM = resample(metric.metricCentreline, 5, true)
   const ringPerimeterM = pathLength(metric.metricCentreline, true)
 
-  log('loading street network...')
+  log(`${tag} loading street network...`)
   let t = Date.now()
-  const network = loadStreetNetwork()
-  log(`street network loaded in ${elapsed(t)}, ${network.ways.length} ways`)
+  const { network, project } = loadRegionStreetNetwork(regionId)
+  log(`${tag} street network loaded in ${elapsed(t)}, ${network.ways.length} ways`)
 
-  log('building routable graph...')
+  log(`${tag} building routable graph...`)
   t = Date.now()
   const graph = buildStreetGraph(network.ways)
-  log(`graph built in ${elapsed(t)}, ${graph.nodeCount} nodes`)
+  log(`${tag} graph built in ${elapsed(t)}, ${graph.nodeCount} nodes`)
 
-  log('rasterising orientation layers...')
+  log(`${tag} rasterising orientation layers...`)
   t = Date.now()
   const layers = buildOrientationLayers(network.ways)
-  log(`raster built in ${elapsed(t)}`)
+  log(`${tag} raster built in ${elapsed(t)}`)
 
-  const project = portoProjection()
   const bounds = {
     min: project.toLocal([network.bbox[0], network.bbox[1]]),
     max: project.toLocal([network.bbox[2], network.bbox[3]]),
   }
 
-  log('generating routes (escalation ladder)...')
+  log(`${tag} generating routes (escalation ladder)...`)
   t = Date.now()
   const result = generateRoutesForCircuit(
     circuitSamplesM,
@@ -85,41 +78,80 @@ export function generateAndWriteRoute(
     bounds,
     layers,
     graph,
-    { onTierRun: (tier) => log(`tier ${tier} finished after ${elapsed(t)}`) },
+    { onTierRun: (tier) => log(`${tag} tier ${tier} finished after ${elapsed(t)}`) },
   )
   log(
-    `generation finished in ${elapsed(t)} — escalationTier=${result.escalationTier}, ` +
+    `${tag} generation finished in ${elapsed(t)} — escalationTier=${result.escalationTier}, ` +
       `${result.routes.length} route(s) kept`,
   )
 
+  const routes: RouteEntry[] = result.routes.map((r, i) => {
+    // `r.points` is a closed loop represented as an open polyline whose last
+    // point repeats the first (routeDeviation's own convention, see
+    // metrics.ts) — the stored format drops that repeat (circuits.json's own
+    // convention: an open ring, first point not repeated).
+    const openRing = r.points.slice(0, -1)
+    return {
+      region: regionId,
+      rank: i + 1,
+      passesBar: r.passesBar,
+      pose: {
+        anchor: project.toLonLat(r.pose.anchorM).map((v) => round(v, LON_LAT_DECIMALS)) as [number, number],
+        rotationRad: r.pose.rotationRad,
+      },
+      points: openRing.map((p) => project.toLonLat(p).map((v) => round(v, LON_LAT_DECIMALS)) as [number, number]),
+      metrics: r.metrics,
+    }
+  })
+
+  return {
+    routes,
+    poses: result.posesSearched,
+    escalationTier: result.escalationTier,
+    streetsAttribution: network.attribution,
+  }
+}
+
+/**
+ * Generate and write the routes of `circuitId` against every region in
+ * `regionIds`, which must be in `circuits` (passed in, not re-read from the
+ * bundle, so a circuit added a moment ago by `find-route` is visible).
+ * Returns the combined file it wrote.
+ */
+export function generateAndWriteRoute(
+  circuits: readonly Circuit[],
+  circuitId: string,
+  scale: number,
+  regionIds: readonly RegionId[],
+  log: (msg: string) => void,
+): { file: RouteFile; path: string } {
+  const circuit = circuits.find((c) => c.id === circuitId)
+  if (!circuit) {
+    throw new Error(`Unknown circuit id "${circuitId}". Known ids: ${circuits.map((c) => c.id).join(', ')}`)
+  }
+  if (regionIds.length === 0) throw new Error('generateAndWriteRoute: regionIds must not be empty')
+
+  const regions: RouteFile['regions'] = []
+  const routes: RouteEntry[] = []
+  let streetsAttribution: RouteFile['streets'] | undefined
+
+  for (const regionId of regionIds) {
+    const result = generateForRegion(regionId, circuit, scale, log)
+    regions.push({ id: regionId, poses: result.poses, escalationTier: result.escalationTier })
+    routes.push(...result.routes)
+    // Same OSM/ODbL attribution regardless of region; keep the first one.
+    streetsAttribution ??= result.streetsAttribution
+  }
+
   const routeFile: RouteFile = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     circuitId,
     generatedAt: new Date().toISOString().slice(0, 10),
     scale,
-    generator: {
-      poses: result.posesSearched,
-      escalationTier: result.escalationTier,
-      bar: DEFAULT_BAR,
-    },
-    streets: network.attribution,
-    routes: result.routes.map((r, i) => {
-      // `r.points` is a closed loop represented as an open polyline whose
-      // last point repeats the first (routeDeviation's own convention, see
-      // metrics.ts) — the stored format drops that repeat (circuits.json's
-      // own convention: an open ring, first point not repeated).
-      const openRing = r.points.slice(0, -1)
-      return {
-        rank: i + 1,
-        passesBar: r.passesBar,
-        pose: {
-          anchor: project.toLonLat(r.pose.anchorM).map((v) => round(v, LON_LAT_DECIMALS)) as [number, number],
-          rotationRad: r.pose.rotationRad,
-        },
-        points: openRing.map((p) => project.toLonLat(p).map((v) => round(v, LON_LAT_DECIMALS)) as [number, number]),
-        metrics: r.metrics,
-      }
-    }),
+    generator: { bar: DEFAULT_BAR },
+    regions,
+    streets: streetsAttribution!,
+    routes,
   }
 
   // Sanity check before writing — a generator bug should fail loudly here,

@@ -47,23 +47,25 @@ describe('gpxFilename', () => {
 
 describe('routeGpx', () => {
   it('exports a stored open ring as a closed loop: n + 1 points, the last equal to the first', () => {
-    const points = trkpts(routeGpx('Hungaroring', 1, RING))
+    const points = trkpts(routeGpx('Hungaroring', 'Porto', 1, RING))
     expect(points).toHaveLength(RING.length + 1)
     expect(points[points.length - 1]).toEqual(points[0])
   })
 
-  it('names the track "<circuit> — route <rank>"', () => {
-    expect(routeGpx('Silverstone Circuit', 2, RING)).toContain('<name>Silverstone Circuit — route 2</name>')
+  it('names the track "<circuit> — <region> — route <rank>"', () => {
+    expect(routeGpx('Silverstone Circuit', 'Espinho', 2, RING)).toContain(
+      '<name>Silverstone Circuit — Espinho — route 2</name>',
+    )
   })
 
   it('refuses a route with fewer than 2 points', () => {
-    expect(() => routeGpx('X', 1, [])).toThrow()
-    expect(() => routeGpx('X', 1, [[-8.6, 41.1]])).toThrow()
+    expect(() => routeGpx('X', 'Porto', 1, [])).toThrow()
+    expect(() => routeGpx('X', 'Porto', 1, [[-8.6, 41.1]])).toThrow()
   })
 })
 
 describe('routeGpxFilename', () => {
-  it('is <circuitId>-route-<rank>.gpx', () => {
-    expect(routeGpxFilename('hungaroring', 2)).toBe('hungaroring-route-2.gpx')
+  it('is <circuitId>-<regionId>-route-<rank>.gpx', () => {
+    expect(routeGpxFilename('hungaroring', 'espinho', 2)).toBe('hungaroring-espinho-route-2.gpx')
   })
 })

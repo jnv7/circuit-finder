@@ -6,6 +6,116 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
+**2026-10-04 — Phase 26 implemented and verified end to end against real
+data; region boundaries then revised a second time the same day (now 6
+regions) based on a map-based review, with that revision's data generation
+deliberately deferred. Current priority is fetching/regenerating against
+the revised boundaries, then closing out the phase.**
+
+**Built and verified this session** (first pass, 5 regions — Porto, Vila do
+Conde, Matosinhos, Vila Nova de Gaia, Espinho): `src/regions.ts`; the 4
+non-Porto regions' real street networks fetched and committed
+(`src/data/regions/*.json`); `src/routes.ts` bumped to `schemaVersion: 2`
+(`region` required per route, per-region `regions[]` generation stats);
+`generate-route`/`find-route` gained a repeatable `--region` flag;
+`src/app/routesPage.ts` gained the region checkbox row, live re-filtering of
+the picker to the best 3 among checked regions, a region label, and a
+dashed/unfilled map rectangle per checked region; `src/app/routesHash.ts`'s
+URL hash grew a region segment. The full `npm run generate-route` batch (6
+circuits × 5 regions) ran to completion; two real bugs surfaced only by that
+real multi-region data (a `data-role` collision between the region
+checkboxes and the detail panel's region label; selection state losing its
+circuit/file reference when no route matched the filter, so re-checking a
+region never recovered) were found and fixed. Full suite **528/528**,
+`tsc --noEmit` clean, `npm run build` clean, and the routes page driven in a
+real browser (Playwright against system Chrome, dev-container's bundled
+Chromium being too old for this OS) confirmed the region checkboxes and map
+rectangles work as built.
+
+**Revised the same day, before any further generation**: a user review of
+the actual boxes on a real map (not the schematic/diagram the prior session's
+figures were reasoned from) found the padded admin bboxes reaching well past
+anywhere "near Porto" — e.g. Vila do Conde's box reaching toward Esposende,
+Vila Nova de Gaia's reaching inland past Valongo. Resolved:
+
+- Vila do Conde and Vila Nova de Gaia's non-coastal edges pulled in to where
+  they actually border Porto's own frozen box.
+- **Póvoa de Varzim added as a 6th region** — its own small, hand-set box
+  around its built-up core (~22 km²), rather than folding it into Vila do
+  Conde or leaving it out, since the two towns are only 2.8 km apart.
+- Every inter-region boundary **in latitude** (not longitude — inevitable
+  among regions hugging the same coastline) widened to a uniform 3 km
+  overlap, calibrated against the largest bundled circuit's own 2.55 km
+  footprint (real bounding-box diagonals measured: 1.50-2.55 km across all
+  6), so a loop anchored near a shared edge still fits inside whichever
+  region's search finds it. This forced two edges neither region "owns" to
+  move: Matosinhos' south edge (against Porto, frozen) and Gaia's north edge
+  (same). Coastal edges separately tightened to the real westmost street
+  already fetched (Vila do Conde had ~600 m of pure open water past its
+  nearest real street; the other three coastal regions were already tight).
+- **These are now the official boundaries in `src/regions.ts`** — but
+  **deliberately not regenerated**: `src/data/regions/*.json` and every
+  committed `src/data/routes/*.json` still reflect the *previous* (5-region)
+  boundaries, and Póvoa has no street file at all. `generate-route`/
+  `find-route` will fail loudly on Póvoa if run without `--region` until its
+  data is fetched — accepted as honest, not a silent wrong result.
+
+Remaining:
+
+1. Fetch real street data for the revised Vila do Conde / Matosinhos / Vila
+   Nova de Gaia boxes and the new Póvoa de Varzim box.
+2. Regenerate the 6 bundled circuits against the revised 6-region set (or
+   merge just the changed regions into the existing files — undecided which
+   is cheaper given Porto's own escalation cost varies hugely by circuit).
+3. Re-run the full suite + a by-hand pass against the revised data.
+4. Mark the spec `done`.
+
+Also still open: the full F1 calendar batch ("Later" table below); the GPX
+check in the receiving app; the deploy smoke check's first real run on the new
+entry points; and Phase 18's button.
+
+<details>
+<summary>Previous priority (2026-10-04, first-pass Phase 26 build), superseded
+above but kept for context</summary>
+
+**2026-10-04 — Phase 26's three remaining design decisions (A/B/C) resolved
+and built; current priority was finishing the 6-circuit × 5-region
+regeneration this unlocked, then verifying and closing out the phase.**
+Superseded the same day by a map-based review that revised the region
+boundaries themselves — see above. The 5-region implementation and
+regeneration described here did complete and remains committed; it's the
+boundaries that changed afterward, not this code.
+
+</details>
+
+<details>
+<summary>Previous priority (2026-10-03/04, Phase 26 scoped), superseded above
+but kept for context</summary>
+
+**2026-10-03/04 — Phase 26 (regional search) scoped and validated with real
+data, including a full 5-region generation run; current priority was working
+through its remaining next steps in order.**
+[specs/phase-26-regional-search.md](specs/phase-26-regional-search.md) answers
+the previous priority's question (widen the Porto street-network mesh? — yes,
+to 5 regions: Porto, Vila do Conde, Matosinhos, Vila Nova de Gaia, Espinho;
+Maia/Gondomar deliberately deferred).
+
+**Step 1 done, 2026-10-04**: all 5 regions' real street data fetched, real
+generation run for one circuit (hungaroring) across all 5. Headline result —
+**31.9 minutes total, not the ~20-25 minute projection**: 4 of 5 regions landed
+at tier 0 in 87-99 s each as predicted, but Vila Nova de Gaia needed the full
+tier-2 escalation ladder and *still* missed the bar for this circuit, costing
+25.3 of those 31.9 minutes by itself (see the spec's Findings 2-3). The ≈13-15×
+figure holds for the typical case; escalation variance is real, not
+hypothetical, and now has a visibility mitigation (log each region's tier/time
+as it finishes) rather than being an unknown.
+
+</details>
+
+<details>
+<summary>Previous priority (2026-10-03, Phase 25 shipped), superseded above but
+kept for context</summary>
+
 **2026-10-03 — Phase 25 shipped; current priority is deciding whether to widen
 the Porto street-network mesh.** [specs/phase-25-routes-page-primary.md](specs/phase-25-routes-page-primary.md)
 is implemented: the routes page is now the site root (`manual.html` holds the
@@ -18,9 +128,10 @@ Espinho/Silvalde) needs its own spec addressing the bundle-size budget and
 possibly the "no runtime fetch" principle, and is the next thing to scope —
 not started yet.
 
-Also still open: the full F1 calendar batch ("Later" table below); the GPX
-check in the receiving app; the deploy smoke check's first real run on the new
-entry points; and Phase 18's button.
+Also still open, unchanged: the full F1 calendar batch; the GPX check in the
+receiving app; the deploy smoke check's first real run; and Phase 18's button.
+
+</details>
 
 <details>
 <summary>Previous priority (2026-10-03, Phase 22 fix), superseded above but
@@ -729,6 +840,44 @@ Presentation only, no generator/data changes. Two bundled changes:
 - See the decision log entry of this date for the two things this phase
   deliberately did **not** do: delete the manual tool, or widen the Porto
   street-network mesh.
+
+### Phase 26 — Regional search (metropolitan-area concelhos, selectable by checkbox) — `draft`
+
+Spec: [specs/phase-26-regional-search.md](specs/phase-26-regional-search.md).
+Not implemented; validated with real data and scoped down this session.
+Searches each circuit against **five** areas — Porto plus Vila do Conde,
+Matosinhos, Vila Nova de Gaia, and Espinho — instead of Porto alone, with
+checkboxes on the routes page to filter which areas' results count (e.g. only
+Gaia + Espinho for south-of-Douro alternatives). The manual tool stays
+untouched and Porto-only.
+
+2026-10-03: the spec's first-pass area-ratio estimate (≈16×) was replaced with
+real measurements, which then changed scope. Real Overpass-fetched
+admin-boundary bboxes for all 6 candidate concelhos run 1.6-3× their official
+polygon area (these concelhos are elongated/irregular, not compact) — worst at
+Maia (2.33×) and Gondomar (2.99×), pushing a 7-region estimate to ≈27×. The user
+call: **drop Maia and Gondomar from this phase** (not rejected, revisitable
+later) rather than chase polygon-clipping to fix the inflation — this alone
+brings the real estimate for the remaining 5 regions back to **≈13-15×**, close
+to the original guess. A real end-to-end generation run (new `extract-region`
+CLI + `streetNetwork.ts`, fetched Espinho's real street network and ran the
+unmodified Phase 22 pipeline against it) found cost tracking area roughly
+linearly (Espinho: 0.67× Porto's bbox area, 0.58× its generation time) — so this
+is now a measured range, not a guess: roughly **20-25 minutes per circuit for
+tier 0 across all 5 regions**, comfortably under the existing 45-minute
+full-ladder (3-tier, single-region) budget, vs. a multi-day worst case the
+7-region version implied. New reusable, tested, dev-only tooling landed in
+support of this: `src/extract/streetNetwork.ts`, `buildRegionHighwayQuery` in
+`src/extract/overpass.ts`, `scripts/extract-region.ts`
+(`npm run extract-region`), and `src/streets.ts`/`src/geo.ts` generalised
+(`loadStreetNetwork(data, project)`, `bboxCenterProjection`) to project any
+region about its own origin rather than Porto's fixed one. A non-intrusive
+selected-area map indicator (dashed outline, no fill, user request) was
+designed, prototyped as a standalone artifact, and **approved by the user**;
+not yet built into the app. Real decisions remain open (bbox-vs-polygon query
+mechanics — now a quality choice, not a cost blocker; one route file per
+circuit vs. per circuit-region; `--region` CLI granularity); see the spec's
+"Open questions".
 
 ### Later — classified by cost and benefit (2026-09-15)
 

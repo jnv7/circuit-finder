@@ -23,18 +23,36 @@ npm run dev        # local dev server
 npm run test       # watch tests
 npm run test:run   # run tests once (used by CI)
 npm run build      # type-check (tsc --noEmit) + production build to dist/
-npm run find-route -- "Monza"     # dev-only: circuit name -> circuits.json + stored Porto route (Phase 24)
-npm run generate-route -- <id>    # dev-only: just the route generator for a bundled circuit (Phase 22)
+npm run find-route -- "Monza"     # dev-only: circuit name -> circuits.json + stored routes across the metro regions (Phase 24/26)
+npm run generate-route -- <id>    # dev-only: just the route generator for a bundled circuit, every region by default (Phase 22/26)
+npm run extract-region -- <regionId> --bbox w,s,e,n  # dev-only: fetch+commit one region's street network (Phase 26)
 ```
 
-`find-route` uses the network only to fetch a new circuit (Wikidata + Overpass,
-cached in the gitignored `.cache/find-route/`); the shipped site never fetches.
+Both `find-route` and `generate-route` take a repeatable `--region <id>` flag
+(ids in `src/regions.ts`) to search only a subset; omitted, every region in
+`src/regions.ts` runs. **As of 2026-10-04, `src/regions.ts` has 6 official
+regions (added Póvoa de Varzim, revised 3 others' boundaries) but committed
+data hasn't caught up** — `src/data/regions/` and every `src/data/routes/
+*.json` still reflect the *previous* 5-region boundaries, and Póvoa has no
+street file at all yet. Running either CLI without `--region` fails loudly on
+Póvoa until that's fetched; see the ROADMAP decision log, 2026-10-04.
+
+`find-route`/`extract-region` use the network only to fetch (a new circuit via
+Wikidata + Overpass, or a region's street data via Overpass), cached in the
+gitignored `.cache/`; the shipped site never fetches.
 
 ## Layout
 
 - `src/` — application code and colocated `*.test.ts` files.
-- `src/data/` — bundled data (`circuits.json`, `routes/`).
-- `src/extract/` — dev-only pure modules behind `find-route` (Wikidata/Overpass parsing, ring finding); not imported by the app. `scripts/` — the CLIs.
+- `src/data/` — bundled data (`circuits.json`, `routes/`, `porto-streets.json`,
+  `regions/` — non-Porto regions' street networks, Phase 26).
+- `src/regions.ts` — the official region ids/labels/bboxes; lightweight, no
+  street data, safe for the browser bundle.
+- `src/extract/` — dev-only pure modules behind `find-route`/`extract-region`
+  (Wikidata/Overpass parsing, ring finding, region street-network building);
+  not imported by the app. `scripts/` — the CLIs, `scripts/lib/` their shared
+  logic (including `regionNetworks.ts`, which loads a region's full street
+  data — dev-only, never bundled).
 - `docs/` — `VISION.md`, `ROADMAP.md`, and `specs/` (one spec per phase).
 - `.github/workflows/deploy.yml` — runs tests + build on every push/PR, and
   deploys `dist/` to GitHub Pages from `main`.

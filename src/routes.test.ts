@@ -1,22 +1,29 @@
 // Validates every committed `src/data/routes/*.json` file: structurally
 // (`validateRouteFile`) and numerically — each route's stored metrics must
 // recompute to the same numbers from its own `points`/`pose` against the
-// circuit and the bundled graph, so a stale or hand-edited file fails here.
-// Cheap (one metric evaluation per route, no search), so this runs in the
-// default suite unlike the generator itself. See
-// docs/specs/phase-22-route-generator.md.
+// circuit and the bundled graph *of the region it was generated against*
+// (Phase 26 — a route's `region` picks which committed street network/
+// projection to recompute it with), so a stale or hand-edited file fails
+// here. Cheap (one metric evaluation per route, no search), so this runs in
+// the default suite unlike the generator itself. See
+// docs/specs/phase-22-route-generator.md and
+// docs/specs/phase-26-regional-search.md.
 import { describe, it, expect } from 'vitest'
 import { routeDeviation } from './app/trace'
 import { loadCircuits, toMetric } from './circuits'
+import { bboxCenterProjection } from './geo'
+import type { LocalProjection } from './geo'
 import { pathLength } from './geometry/path'
 import type { Point } from './geometry/types'
 import { buildStreetGraph } from './graph'
 import type { NodeId, StreetGraph } from './graph'
 import { portoProjection } from './porto'
+import { REGION_IDS } from './regions'
+import type { RegionId } from './regions'
 import { buildLoopFromNodes } from './route/mapMatch'
 import { frechetToRing, retracedFraction as computeRetracedFraction } from './route/metrics'
 import { placePoint } from './route/poseSearch'
-import { loadStreetNetwork } from './streets'
+import { loadStreetNetwork, validateStreetNetwork } from './streets'
 import { validateRouteFile } from './routes'
 
 const modules = import.meta.glob('./data/routes/*.json', { eager: true }) as Record<
@@ -24,6 +31,42 @@ const modules = import.meta.glob('./data/routes/*.json', { eager: true }) as Rec
   { default: unknown }
 >
 const files = Object.entries(modules).map(([path, mod]) => ({ path, data: mod.default }))
+
+const regionModules = import.meta.glob('./data/regions/*.json', { eager: true }) as Record<
+  string,
+  { default: unknown }
+>
+const regionDataById = new Map<string, unknown>()
+for (const [path, mod] of Object.entries(regionModules)) {
+  const id = path.split('/').pop()!.replace(/-streets\.json$/, '')
+  regionDataById.set(id, mod.default)
+}
+
+type RegionGraph = { graph: StreetGraph; project: LocalProjection }
+const regionGraphCache = new Map<RegionId, RegionGraph>()
+
+/** Build (and cache) the committed network graph + projection for one
+ *  region — `porto` from the bundled default, every other id from its
+ *  committed `src/data/regions/<id>-streets.json`, mirroring exactly what
+ *  the generator built it from (`scripts/lib/regionNetworks.ts`). */
+function regionGraph(regionId: RegionId): RegionGraph {
+  const cached = regionGraphCache.get(regionId)
+  if (cached) return cached
+
+  let built: RegionGraph
+  if (regionId === 'porto') {
+    const project = portoProjection()
+    built = { graph: buildStreetGraph(loadStreetNetwork(undefined, project).ways), project }
+  } else {
+    const data = regionDataById.get(regionId)
+    if (!data) throw new Error(`no committed street data for region "${regionId}"`)
+    const { bbox } = validateStreetNetwork(data)
+    const project = bboxCenterProjection(bbox)
+    built = { graph: buildStreetGraph(loadStreetNetwork(data, project).ways), project }
+  }
+  regionGraphCache.set(regionId, built)
+  return built
+}
 
 /**
  * Re-resolve a stored route's points back to the graph nodes they came from,
@@ -49,7 +92,11 @@ function reresolveNodeIds(closedRouteM: readonly Point[], graph: StreetGraph): N
   return ids
 }
 
-describe('committed route files', () => {
+// Generous timeout: the first route file to touch a given region pays that
+// region's one-time graph build (regionGraph's cache, above) — Matosinhos
+// and Vila do Conde's real networks take several seconds each, same
+// load-sensitivity precedent as graph.test.ts/app/map.test.ts (Phase 16).
+describe('committed route files', { timeout: 60_000 }, () => {
   const circuits = loadCircuits()
   const knownIds = circuits.map((c) => c.id)
 
@@ -60,22 +107,21 @@ describe('committed route files', () => {
     return
   }
 
-  const network = loadStreetNetwork()
-  const graph = buildStreetGraph(network.ways)
-  const project = portoProjection()
-
   for (const { path, data } of files) {
     describe(path, () => {
       it('validates against the schema', () => {
         expect(() => validateRouteFile(data, knownIds)).not.toThrow()
       })
 
-      it('every route recomputes to its stored metrics', () => {
+      it('every route recomputes to its stored metrics against its own region', () => {
         const file = validateRouteFile(data, knownIds)
         const circuit = circuits.find((c) => c.id === file.circuitId)!
         const metric = toMetric(circuit)
 
         for (const route of file.routes) {
+          expect(REGION_IDS).toContain(route.region)
+          const { graph, project } = regionGraph(route.region)
+
           const anchorM = project.toLocal(route.pose.anchor)
           const placedRingM = metric.metricCentreline.map((p) =>
             placePoint(p, { anchorM, rotationRad: route.pose.rotationRad }, file.scale),

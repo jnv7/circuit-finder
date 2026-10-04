@@ -8,6 +8,32 @@ Newest release first.
 
 ---
 
+## 0.17.0 — Search the whole metro area, not just Porto (2026-10-04)
+
+**The Generated routes page now searches Porto, Vila do Conde, Matosinhos,
+Vila Nova de Gaia, and Espinho** — five areas instead of one. Checkboxes let
+you pick which ones count: leave them all ticked to see the three best
+routes across the whole metro area, or untick everything except Gaia and
+Espinho to see only alternatives south of the Douro. Each route in the list
+now shows which area it's in, and a thin dashed outline on the map marks
+every area currently selected, without getting in the way of the route
+itself.
+
+A sixth area, **Póvoa de Varzim**, is listed but not populated yet — its
+checkbox is there, but no routes will show for it until a future update
+fetches its street data.
+
+- Route download filenames now include the area name
+  (`hungaroring-espinho-route-2.gpx`), since a circuit can have more than
+  one "route 1" once it's searched in several places.
+- Bookmarked route links gained an area segment
+  (`#hungaroring/espinho/2`). A link saved before this release won't match
+  the new format — it falls back to the first available circuit's best
+  route rather than breaking, same as any unrecognised link, but it won't
+  land you back on the specific circuit you'd bookmarked.
+
+---
+
 ## 0.16.0 — Generated routes is now the home page (2026-10-03)
 
 **Visiting the site now takes you straight to the Generated routes page** — pick

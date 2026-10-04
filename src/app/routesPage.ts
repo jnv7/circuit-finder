@@ -1,27 +1,34 @@
 // Phase 23: the routes page — a lookup, not a tool. Pick a circuit, see one of
 // its stored (Phase 22) routes on a real OSM basemap with the circuit's outline
 // dashed over it, read plainly how well it matches (and how it misses, when it
-// does), and download it as GPX. Nothing here is computed beyond placing the
-// outline; the route files are injected, so tests need no real data and the
-// page never knows how they are bundled. See docs/specs/phase-23-routes-page.md.
+// does), and download it as GPX. Phase 26 adds a region checkbox row: every
+// region is searched independently (`src/regions.ts`), and the picker always
+// shows the best 3 routes *among the checked regions*, re-ranked live as
+// checkboxes change, with a dashed, non-intrusive rectangle per checked
+// region on the map. Nothing here is computed beyond placing the outline and
+// picking/ranking; the route files are injected, so tests need no real data
+// and the page never knows how they are bundled. See
+// docs/specs/phase-23-routes-page.md and docs/specs/phase-26-regional-search.md.
 import L from 'leaflet'
 import { escapeHtml } from '../circuits'
 import type { MetricCircuit } from '../circuits'
 import type { LonLat } from '../geo'
 import { PORTO_CENTER, PORTO_ZOOM } from '../porto'
+import { REGIONS, regionLabel } from '../regions'
+import type { RegionId } from '../regions'
 import type { RouteEntry, RouteFile } from '../routes'
 import { barMisses } from './barMisses'
 import { addBasemap } from './basemap'
 import { downloadFile } from './download'
 import { routeGpx, routeGpxFilename } from './gpx'
 import { formatDistance, overlayLatLngs } from './overlay'
-import { pickerSummaryLine } from './routeSummary'
+import { pickerSummaryLine, pickTopRoutes } from './routeSummary'
 import { formatHash, parseHash } from './routesHash'
-import type { RouteRef } from './routesHash'
 
 const ROUTE_COLOR = '#1565c0'
 const OUTLINE_COLOR = '#c62828'
 const START_COLOR = '#2e7d32'
+const REGION_OUTLINE_COLOR = '#757575'
 
 export type RoutesPageDeps = {
   /** Circuit ids that have a stored route file — known up front, so the list
@@ -69,6 +76,16 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
+function regionRectBounds(ids: ReadonlySet<RegionId>): L.LatLngBounds | null {
+  let bounds: L.LatLngBounds | null = null
+  for (const region of REGIONS) {
+    if (!ids.has(region.id)) continue
+    const b = L.latLngBounds([region.bbox[1], region.bbox[0]], [region.bbox[3], region.bbox[2]])
+    bounds = bounds ? bounds.extend(b) : b
+  }
+  return bounds
+}
+
 export function createRoutesPage(
   container: HTMLElement,
   circuits: readonly MetricCircuit[],
@@ -97,6 +114,21 @@ export function createRoutesPage(
   }
   selectLabel.append(circuitSelect)
 
+  const regionsRow = el('div', { className: 'region-row' }, { 'data-role': 'regions' })
+  const selectedRegions = new Set<RegionId>(REGIONS.map((r) => r.id))
+  for (const region of REGIONS) {
+    const label = el('label', { className: 'check' })
+    const box = el('input', { type: 'checkbox' }, { 'data-role': 'region-toggle', 'data-region': region.id })
+    box.checked = true
+    label.append(box, ` ${region.label}`)
+    regionsRow.append(label)
+    box.addEventListener('change', () => {
+      if (box.checked) selectedRegions.add(region.id)
+      else selectedRegions.delete(region.id)
+      onRegionsChanged()
+    })
+  }
+
   const picker = el('div', { className: 'route-picker' }, { 'data-role': 'route-picker' })
   const details = el('div', { className: 'route-details' }, { 'data-role': 'details' })
 
@@ -108,7 +140,7 @@ export function createRoutesPage(
   const downloadBtn = el('button', { type: 'button', textContent: 'Download GPX' }, { 'data-role': 'download-gpx' })
   downloadBtn.disabled = true
 
-  panelEl.append(backLink, heading, selectLabel, picker, details, outlineLabel, downloadBtn)
+  panelEl.append(backLink, heading, selectLabel, regionsRow, picker, details, outlineLabel, downloadBtn)
 
   // --- Map -----------------------------------------------------------------
   const map = L.map(mapEl, { zoomControl: true }).setView(toLatLng(PORTO_CENTER), PORTO_ZOOM)
@@ -125,7 +157,10 @@ export function createRoutesPage(
 
   // --- State ---------------------------------------------------------------
   let showOutline = true
-  let current: { circuit: MetricCircuit; file: RouteFile; route: RouteEntry } | null = null
+  // `route` is null when a circuit/file is loaded but no route matches the
+  // current region checkboxes — `current` itself stays non-null so toggling
+  // a region back on can still find its way back (Phase 26).
+  let current: { circuit: MetricCircuit; file: RouteFile; route: RouteEntry | null } | null = null
   let token = 0
   let destroyed = false
 
@@ -133,31 +168,6 @@ export function createRoutesPage(
 
   function firstAvailable(): MetricCircuit | undefined {
     return circuits.find((c) => deps.availableIds.has(c.id))
-  }
-
-  function renderPicker(file: RouteFile, selectedRank: number): void {
-    picker.replaceChildren()
-    for (const route of file.routes) {
-      const misses = barMisses(route.metrics, file.generator.bar)
-      const best = route.rank === 1
-      const btn = el(
-        'button',
-        { type: 'button', className: `route-btn ${misses.length === 0 ? 'route-btn--ok' : 'route-btn--miss'}${best ? ' route-btn--best' : ''}` },
-        { 'data-role': 'route', 'data-rank': String(route.rank), 'aria-pressed': String(route.rank === selectedRank) },
-      )
-      if (best) btn.append(el('span', { className: 'badge badge--best', textContent: 'Best' }))
-      btn.append(
-        el('span', {
-          className: 'route-btn__title',
-          textContent: `Route ${route.rank} · ${misses.length === 0 ? 'meets the bar' : 'misses the bar'}`,
-        }),
-        el('span', { className: 'route-btn__metrics', textContent: pickerSummaryLine(route.metrics) }),
-      )
-      btn.addEventListener('click', () => {
-        if (current) void select({ circuitId: current.circuit.id, rank: route.rank })
-      })
-      picker.append(btn)
-    }
   }
 
   function renderDetails(circuit: MetricCircuit, file: RouteFile, route: RouteEntry): void {
@@ -182,7 +192,7 @@ export function createRoutesPage(
     details.append(list)
 
     const [startLon, startLat] = route.points[0]!
-    if (route.area) details.append(el('p', { className: 'area', textContent: route.area }, { 'data-role': 'area' }))
+    details.append(el('p', { className: 'region', textContent: regionLabel(route.region) }, { 'data-role': 'region' }))
     const where = el('p', { className: 'where' })
     where.append(`Starts at ${formatCoord(startLat)}, ${formatCoord(startLon)} · `)
     where.append(
@@ -200,9 +210,27 @@ export function createRoutesPage(
     )
   }
 
-  function drawMap(circuit: MetricCircuit, file: RouteFile, route: RouteEntry): void {
+  function drawMap(circuit: MetricCircuit, file: RouteFile, route: RouteEntry | null): void {
     layers.clearLayers()
     outlineLayer = null
+
+    for (const region of REGIONS) {
+      if (!selectedRegions.has(region.id)) continue
+      L.rectangle(
+        [
+          [region.bbox[1], region.bbox[0]],
+          [region.bbox[3], region.bbox[2]],
+        ],
+        { color: REGION_OUTLINE_COLOR, weight: 1, opacity: 0.6, fill: false, dashArray: '4 6', interactive: false },
+      ).addTo(layers)
+    }
+
+    if (!route) {
+      const bounds = regionRectBounds(selectedRegions)
+      if (bounds) map.fitBounds(bounds, { padding: [30, 30] })
+      setAttribution('')
+      return
+    }
 
     const outline = overlayLatLngs(circuit, {
       anchor: route.pose.anchor,
@@ -250,12 +278,81 @@ export function createRoutesPage(
     downloadBtn.disabled = true
   }
 
+  function renderPickedRoutes(file: RouteFile, picked: readonly RouteEntry[], selected: RouteEntry | undefined): void {
+    picker.replaceChildren()
+    picked.forEach((route, i) => {
+      const misses = barMisses(route.metrics, file.generator.bar)
+      const best = i === 0
+      const btn = el(
+        'button',
+        { type: 'button', className: `route-btn ${misses.length === 0 ? 'route-btn--ok' : 'route-btn--miss'}${best ? ' route-btn--best' : ''}` },
+        {
+          'data-role': 'route',
+          'data-rank': String(route.rank),
+          'data-region': route.region,
+          'aria-pressed': String(selected === route),
+        },
+      )
+      if (best) btn.append(el('span', { className: 'badge badge--best', textContent: 'Best' }))
+      btn.append(
+        el('span', {
+          className: 'route-btn__title',
+          textContent: `${regionLabel(route.region)}, route ${route.rank} · ${misses.length === 0 ? 'meets the bar' : 'misses the bar'}`,
+        }),
+        el('span', { className: 'route-btn__metrics', textContent: pickerSummaryLine(route.metrics) }),
+      )
+      btn.addEventListener('click', () => {
+        if (current) void select({ circuitId: current.circuit.id, region: route.region, rank: route.rank })
+      })
+      picker.append(btn)
+    })
+  }
+
+  function pickedFor(file: RouteFile): RouteEntry[] {
+    return pickTopRoutes(file.routes, selectedRegions, file.generator.bar)
+  }
+
+  function onRegionsChanged(): void {
+    if (!current) return
+    const { circuit, file, route } = current
+    const picked = pickedFor(file)
+    const stillThere = route ? picked.find((r) => r.region === route.region && r.rank === route.rank) : undefined
+    const next = stillThere ?? picked[0] ?? null
+    current = { circuit, file, route: next }
+
+    renderPickedRoutes(file, picked, next ?? undefined)
+    if (next) {
+      renderDetails(circuit, file, next)
+      downloadBtn.disabled = false
+    } else {
+      details.replaceChildren(
+        el('p', { className: 'message', textContent: 'No routes match the selected regions.' }, { 'data-role': 'message' }),
+      )
+      downloadBtn.disabled = true
+    }
+    drawMap(circuit, file, next ?? null)
+
+    if (next) {
+      try {
+        history.replaceState(null, '', formatHash({ circuitId: circuit.id, region: next.region, rank: next.rank }))
+      } catch {
+        // No history API (sandboxed frame, etc.): the page works, just without a bookmarkable URL.
+      }
+    }
+  }
+
+  /** A specific route (`region` + `rank`), or just a circuit — "pick the best
+   *  route among the checked regions" (used when switching circuit, or when
+   *  a referenced region/rank doesn't exist or got filtered out). */
+  type Selection = { circuitId: string; region?: string; rank?: number }
+
   /** Select a route. An unknown circuit (or one with no file) falls back to the
-   *  first available circuit; an unknown rank falls back to that circuit's
-   *  first route — a stale or hand-edited URL never breaks the page. */
-  async function select(ref: RouteRef | null, opts: { updateHash?: boolean } = {}): Promise<void> {
+   *  first available circuit; an unknown region/rank, or one filtered out by
+   *  the current region checkboxes, falls back to the best route among the
+   *  checked regions — a stale or hand-edited URL never breaks the page. */
+  async function select(sel: Selection | null, opts: { updateHash?: boolean } = {}): Promise<void> {
     const mine = ++token
-    const wanted = ref && deps.availableIds.has(ref.circuitId) ? circuitById(ref.circuitId) : undefined
+    const wanted = sel && deps.availableIds.has(sel.circuitId) ? circuitById(sel.circuitId) : undefined
     const circuit = wanted ?? firstAvailable()
     if (!circuit) {
       showMessage('No routes have been generated yet.')
@@ -271,17 +368,29 @@ export function createRoutesPage(
     }
     if (mine !== token || destroyed) return // a newer selection superseded this one
 
-    const route = (wanted && ref ? file.routes.find((r) => r.rank === ref.rank) : undefined) ?? file.routes[0]!
+    const picked = pickedFor(file)
+    const route =
+      (wanted && sel?.region !== undefined && sel.rank !== undefined
+        ? picked.find((r) => r.region === sel.region && r.rank === sel.rank)
+        : undefined) ?? picked[0] ?? null
     current = { circuit, file, route }
     circuitSelect.value = circuit.id
-    renderPicker(file, route.rank)
-    renderDetails(circuit, file, route)
-    drawMap(circuit, file, route)
-    downloadBtn.disabled = false
 
-    if (opts.updateHash !== false) {
+    renderPickedRoutes(file, picked, route ?? undefined)
+    if (route) {
+      renderDetails(circuit, file, route)
+      downloadBtn.disabled = false
+    } else {
+      details.replaceChildren(
+        el('p', { className: 'message', textContent: 'No routes match the selected regions.' }, { 'data-role': 'message' }),
+      )
+      downloadBtn.disabled = true
+    }
+    drawMap(circuit, file, route ?? null)
+
+    if (opts.updateHash !== false && route) {
       try {
-        history.replaceState(null, '', formatHash({ circuitId: circuit.id, rank: route.rank }))
+        history.replaceState(null, '', formatHash({ circuitId: circuit.id, region: route.region, rank: route.rank }))
       } catch {
         // No history API (sandboxed frame, etc.): the page works, just without a bookmarkable URL.
       }
@@ -289,7 +398,7 @@ export function createRoutesPage(
   }
 
   // --- Wiring --------------------------------------------------------------
-  circuitSelect.addEventListener('change', () => void select({ circuitId: circuitSelect.value, rank: 1 }))
+  circuitSelect.addEventListener('change', () => void select({ circuitId: circuitSelect.value }))
 
   outlineBox.addEventListener('change', () => {
     showOutline = outlineBox.checked
@@ -299,15 +408,20 @@ export function createRoutesPage(
   })
 
   downloadBtn.addEventListener('click', () => {
-    if (!current) return
+    if (!current?.route) return
     const { circuit, route } = current
-    downloadFile(routeGpxFilename(circuit.id, route.rank), routeGpx(circuit.name, route.rank, route.points), 'application/gpx+xml')
+    const label = regionLabel(route.region)
+    downloadFile(
+      routeGpxFilename(circuit.id, route.region, route.rank),
+      routeGpx(circuit.name, label, route.rank, route.points),
+      'application/gpx+xml',
+    )
   })
 
   const onHashChange = (): void => {
     const ref = parseHash(window.location.hash)
     if (!ref) return
-    if (current && current.circuit.id === ref.circuitId && current.route.rank === ref.rank) return
+    if (current && current.circuit.id === ref.circuitId && current.route?.region === ref.region && current.route?.rank === ref.rank) return
     void select(ref, { updateHash: false })
   }
   window.addEventListener('hashchange', onHashChange)

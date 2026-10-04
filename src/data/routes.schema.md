@@ -1,10 +1,10 @@
 # Generated route files (`src/data/routes/<circuitId>.json`)
 
 One file per circuit, written by `npm run generate-route -- <circuitId>`
-(Phase 22) and read by the routes page (Phase 23). Never hand-edited —
-`routes.test.ts` recomputes every stored route's metrics from its own
-`points`/`pose` and the bundled street graph, so a stale or hand-edited file
-fails the default test suite.
+(Phase 22, regionalised Phase 26) and read by the routes page (Phase 23).
+Never hand-edited — `routes.test.ts` recomputes every stored route's metrics
+from its own `points`/`pose` and the bundled street graph, so a stale or
+hand-edited file fails the default test suite.
 
 Validated and typed by `src/routes.ts`'s `validateRouteFile`/`loadRouteFile`.
 
@@ -12,20 +12,26 @@ Validated and typed by `src/routes.ts`'s `validateRouteFile`/`loadRouteFile`.
 
 ```ts
 type RouteFile = {
-  schemaVersion: 1
+  schemaVersion: 2
   circuitId: string // must exist in circuits.json
   generatedAt: string // YYYY-MM-DD
   scale: number // 1 unless --scale was given to the generator
   generator: {
-    poses: number // candidate poses searched at the tier used
-    escalationTier: number // 0, 1, or 2 — see docs/specs/phase-22-route-generator.md
     bar: { meanM: number; maxM: number; ratioLo: number; ratioHi: number; retrace: number }
   }
+  // One entry per region actually searched (src/regions.ts's RegionId) —
+  // lets a maintainer see which region needed how much search effort
+  // without digging through generation logs.
+  regions: {
+    id: RegionId
+    poses: number // candidate poses searched at the tier used
+    escalationTier: number // 0, 1, or 2 — see docs/specs/phase-22-route-generator.md
+  }[]
   streets: Attribution // same shape as porto-streets.json's attribution
   routes: {
-    rank: number // 1 = best, ranked 1..n in order
+    region: RegionId // which of `regions` this route came from
+    rank: number // 1 = best, ranked 1..n in order *within this region*
     passesBar: boolean
-    area?: string // free text naming where it is, e.g. "Ribeira and Baixa, north bank of the Douro"
     pose: { anchor: [number, number]; rotationRad: number } // [lon, lat]; scale is the file's own
     points: [number, number][] // [lon, lat], closed loop: first point NOT repeated
     metrics: {
@@ -55,9 +61,15 @@ type RouteFile = {
   always reflects the bar stored alongside it, not today's constant.
 - A route that misses the bar is stored anyway, with its real numbers —
   never hidden, never silently dropped.
+- `rank` is per-region, not file-wide: a file searching all 5 regions has up
+  to 5 routes with `rank: 1` (one per region), not one. A route is uniquely
+  identified by `(region, rank)`, not `rank` alone.
+- `routes[].region` must be one of `regions[].id` — a route can never claim a
+  region the file says wasn't searched.
 
 ## Attribution
 
 `streets` carries the same OpenStreetMap attribution as
-`porto-streets.schema.md`, since every route is built entirely from that
-bundled network.
+`porto-streets.schema.md`, since every route is built entirely from bundled
+street networks (Porto's own, or one of the four regional ones under
+`src/data/regions/`).

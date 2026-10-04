@@ -70,3 +70,13 @@ export function projectRing(ring: readonly LonLat[]): { points: Point[]; project
   const projection = localProjection(meanLonLat(ring))
   return { points: ring.map((c) => projection.toLocal(c)), projection }
 }
+
+/**
+ * A local projection centred on a `[west, south, east, north]` bbox's own
+ * midpoint — keeps distortion low for a region far from Porto's own fixed
+ * origin (`portoProjection`), since a region's search only ever needs
+ * internal consistency with itself, not a shared frame with any other region.
+ */
+export function bboxCenterProjection(bbox: readonly [number, number, number, number]): LocalProjection {
+  return localProjection([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
+}

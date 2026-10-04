@@ -5,7 +5,7 @@
 import rawStreets from './data/porto-streets.json'
 import type { Attribution } from './attribution'
 import { validateAttribution } from './attribution'
-import type { LonLat } from './geo'
+import type { LocalProjection, LonLat } from './geo'
 import type { Point } from './geometry/types'
 import { closestPointOnSegment } from './geometry/nearest'
 import { distance } from './geometry/vector'
@@ -132,10 +132,15 @@ export function validateStreetNetwork(data: unknown): {
   return { bbox, attribution, ways }
 }
 
-/** Load, validate, and project the bundled Porto street network. */
-export function loadStreetNetwork(): StreetNetwork {
-  const { bbox, attribution, ways } = validateStreetNetwork(rawStreets)
-  const project = portoProjection()
+/**
+ * Load, validate, and project a street network — the bundled Porto one by
+ * default. Phase 26 (regional search) passes a different region's raw data
+ * and its own locally-centred projection (`regionProjection`, below), so a
+ * wide-area network never has to share Porto's fixed origin and accumulate
+ * its distortion at metro-area distances.
+ */
+export function loadStreetNetwork(data: unknown = rawStreets, project: LocalProjection = portoProjection()): StreetNetwork {
+  const { bbox, attribution, ways } = validateStreetNetwork(data)
   return {
     bbox,
     attribution,

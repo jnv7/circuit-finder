@@ -19,6 +19,8 @@ import { applyExtraction, extractCircuit, provenanceRow } from '../src/extract/e
 import type { ExtractOptions, ExtractResult } from '../src/extract/extract'
 import { createJsonClient } from '../src/extract/http'
 import { matchBundled } from '../src/extract/names'
+import { isRegionId, REGION_IDS } from '../src/regions'
+import type { RegionId } from '../src/regions'
 import { generateAndWriteRoute } from './lib/generate'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -41,6 +43,7 @@ const USAGE = `Usage: npm run find-route -- "<circuit name>" [flags]
   --id, --name           override the derived id / display name
   --lat, --lon           override the circuit's centre
   --scale N              scale passed to the route generator (default 1)
+  --region id            search only this region (repeatable; default: all 5, src/regions.ts)
   --offline              use the response cache only`
 
 function fail(message: string, code = 1): never {
@@ -84,6 +87,7 @@ async function main(): Promise<void> {
       lat: { type: 'string' },
       lon: { type: 'string' },
       scale: { type: 'string' },
+      region: { type: 'string', multiple: true },
       offline: { type: 'boolean' },
     },
   })
@@ -91,6 +95,12 @@ async function main(): Promise<void> {
   if (query === '') fail(USAGE)
   const scale = num(values.scale, '--scale') ?? 1
   if (scale <= 0) fail('--scale must be a positive number')
+  const regionIds: RegionId[] = []
+  for (const value of values.region ?? []) {
+    if (!isRegionId(value)) fail(`--region must be one of: ${REGION_IDS.join(', ')} (got "${value}")`)
+    regionIds.push(value)
+  }
+  const regions = regionIds.length > 0 ? regionIds : [...REGION_IDS]
   const log = (msg: string): void => console.log(msg)
 
   let circuits = loadCircuits()
@@ -179,16 +189,19 @@ async function main(): Promise<void> {
   if (values['dry-run'] || values.list) return
   const tag = `[${circuitId}]`
   try {
-    const { file } = generateAndWriteRoute(circuits, circuitId, scale, (msg) => log(`${tag} ${msg}`))
-    log(`\n${file.routes.length} route(s) for ${circuitId} (escalation tier ${file.generator.escalationTier}):`)
-    for (const r of file.routes) {
-      const m = r.metrics
-      const misses = barMisses(m, file.generator.bar)
-      log(
-        `  #${r.rank}: ${m.lengthM.toFixed(0)} m (${m.lengthRatio.toFixed(2)}×), mean ${m.meanDeviationM.toFixed(1)} m, ` +
-          `max ${m.maxDeviationM.toFixed(1)} m, retraced ${(m.retracedFraction * 100).toFixed(1)}% — ` +
-          (misses.length === 0 ? 'meets the bar' : `misses the bar: ${misses.join('; ')}`),
-      )
+    const { file } = generateAndWriteRoute(circuits, circuitId, scale, regions, (msg) => log(`${tag} ${msg}`))
+    log(`\n${file.routes.length} route(s) for ${circuitId} across ${file.regions.length} region(s):`)
+    for (const region of file.regions) {
+      log(`  ${region.id}: escalation tier ${region.escalationTier}, ${region.poses} poses searched`)
+      for (const r of file.routes.filter((route) => route.region === region.id)) {
+        const m = r.metrics
+        const misses = barMisses(m, file.generator.bar)
+        log(
+          `    #${r.rank}: ${m.lengthM.toFixed(0)} m (${m.lengthRatio.toFixed(2)}×), mean ${m.meanDeviationM.toFixed(1)} m, ` +
+            `max ${m.maxDeviationM.toFixed(1)} m, retraced ${(m.retracedFraction * 100).toFixed(1)}% — ` +
+            (misses.length === 0 ? 'meets the bar' : `misses the bar: ${misses.join('; ')}`),
+        )
+      }
     }
   } catch (err) {
     console.error(`\nroute generation failed: ${err instanceof Error ? err.message : String(err)}`)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { localProjection, meanLonLat, placePoints, projectRing } from './geo'
+import { bboxCenterProjection, localProjection, meanLonLat, placePoints, projectRing } from './geo'
 import type { LonLat } from './geo'
 import { distance } from './geometry/vector'
 
@@ -70,5 +70,13 @@ describe('geo', () => {
     const cy = points.reduce((s, p) => s + p[1], 0) / points.length
     expect(cx).toBeCloseTo(0, 6)
     expect(cy).toBeCloseTo(0, 6)
+  })
+
+  it('bboxCenterProjection centres on the bbox midpoint, not a corner', () => {
+    const bbox: [number, number, number, number] = [-8.65, 40.96, -8.59, 41.03]
+    const proj = bboxCenterProjection(bbox)
+    expect(proj.origin[0]).toBeCloseTo((bbox[0] + bbox[2]) / 2, 9)
+    expect(proj.origin[1]).toBeCloseTo((bbox[1] + bbox[3]) / 2, 9)
+    expect(proj.toLocal(proj.origin)).toEqual([0, 0])
   })
 })

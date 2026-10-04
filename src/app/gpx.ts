@@ -37,14 +37,17 @@ export function gpxFilename(circuitId: string, now: Date): string {
 }
 
 /** A stored route as a GPX document. Stored routes are open rings (the first
- *  point is not repeated), so the loop is closed here by appending it. */
-export function routeGpx(circuitName: string, rank: number, ring: readonly LonLat[]): string {
+ *  point is not repeated), so the loop is closed here by appending it.
+ *  `regionLabel` disambiguates once a circuit has a route per region (Phase
+ *  26) — each region has its own rank 1. */
+export function routeGpx(circuitName: string, regionLabel: string, rank: number, ring: readonly LonLat[]): string {
   const first = ring[0]
   if (first === undefined || ring.length < 2) throw new Error('routeGpx: a route needs at least 2 points')
-  return buildGpx([...ring, first], `${circuitName} — route ${rank}`)
+  return buildGpx([...ring, first], `${circuitName} — ${regionLabel} — route ${rank}`)
 }
 
-/** "hungaroring-route-2.gpx" — a stored route has no "today", only a rank. */
-export function routeGpxFilename(circuitId: string, rank: number): string {
-  return `${circuitId}-route-${rank}.gpx`
+/** "hungaroring-espinho-route-2.gpx" — a stored route has no "today", only a
+ *  region and a rank within it. */
+export function routeGpxFilename(circuitId: string, regionId: string, rank: number): string {
+  return `${circuitId}-${regionId}-route-${rank}.gpx`
 }

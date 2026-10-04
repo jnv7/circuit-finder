@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
+import { bboxCenterProjection } from './geo'
 import type { Point } from './geometry/types'
 import { distanceToSegment } from './geometry/nearest'
 import {
@@ -75,6 +76,24 @@ describe('loadStreetNetwork (bundled data)', () => {
   it('has OSM/ODbL attribution', () => {
     expect(network.attribution.source).toMatch(/OpenStreetMap/)
     expect(network.attribution.license).toMatch(/ODbL/)
+  })
+})
+
+describe('loadStreetNetwork (arbitrary region data + projection — Phase 26)', () => {
+  it('projects with the given projection instead of the fixed Porto one', () => {
+    const doc = validDoc()
+    const bbox = (doc as { bbox: [number, number, number, number] }).bbox
+    const project = bboxCenterProjection(bbox)
+    const network = loadStreetNetwork(doc, project)
+    // The way's first point, decoded then projected about the bbox's own
+    // centre, must match projecting it directly — proof the passed-in
+    // projection is actually used, not silently ignored for the default.
+    const { ways: decoded } = validateStreetNetwork(doc)
+    expect(network.ways[0]![0]).toEqual(project.toLocal(decoded[0]![0]!))
+  })
+
+  it('still defaults to the bundled Porto network when called with no arguments', () => {
+    expect(loadStreetNetwork().ways.length).toEqual(loadStreetNetwork(undefined).ways.length)
   })
 })
 

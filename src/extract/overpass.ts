@@ -61,6 +61,47 @@ export function buildQuery(around: { lat: number; lon: number; radiusM: number }
   ].join('\n')
 }
 
+/**
+ * "Runnable" highway classes — same filter `porto-streets.json` was built
+ * with (see `src/data/porto-streets.schema.md`): excludes motorway/trunk and
+ * link roads, which aren't places a person runs.
+ */
+export const RUNNABLE_HIGHWAY_CLASSES = [
+  'residential',
+  'living_street',
+  'unclassified',
+  'tertiary',
+  'secondary',
+  'primary',
+  'pedestrian',
+  'footway',
+  'path',
+  'track',
+  'cycleway',
+  'steps',
+  'service',
+] as const
+
+/**
+ * Query for every "runnable" way inside a `[west, south, east, north]` bbox —
+ * the shape a regional street-network extraction (Phase 26) needs, as
+ * opposed to `buildQuery`'s "near a point" search for one circuit. `>` plus
+ * `out skel qt` resolves node coordinates the same way `buildQuery` does, so
+ * the same `parseWays` reads either response.
+ */
+export function buildRegionHighwayQuery(bbox: readonly [number, number, number, number]): string {
+  const [west, south, east, north] = bbox
+  if (!(west < east) || !(south < north)) throw new Error('buildRegionHighwayQuery: bbox must have west < east and south < north')
+  const box = [south, west, north, east].map((v) => v.toFixed(6)).join(',')
+  return [
+    '[out:json][timeout:120];',
+    `way["highway"~"^(${RUNNABLE_HIGHWAY_CLASSES.join('|')})$"](${box})->.ways;`,
+    '.ways out body;',
+    '.ways >;',
+    'out skel qt;',
+  ].join('\n')
+}
+
 /** Query for one named OSM element as the ring source (`--relation` / `--way`). */
 export function buildElementQuery(element: { relation: number } | { way: number }): string {
   if ('relation' in element) {

@@ -1,6 +1,6 @@
 {
   "name": "circuit-finder",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "generate-route": "tsx scripts/generate-route.ts",
-    "find-route": "tsx scripts/find-route.ts"
+    "find-route": "tsx scripts/find-route.ts",
+    "extract-region": "tsx scripts/extract-region.ts"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.22",

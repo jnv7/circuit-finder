@@ -436,11 +436,22 @@ body,
   color: #a02020;
 }
 
-.routes-panel .area,
+.routes-panel .region,
 .routes-panel .where,
 .routes-panel .note,
 .routes-panel .message {
   margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.routes-panel .region-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 13px;
+}
+
+.routes-panel .region-row .check {
   font-size: 13px;
 }
 

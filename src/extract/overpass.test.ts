@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildQuery, candidateWays, isPitLane, parseWays } from './overpass'
+import { buildQuery, buildRegionHighwayQuery, candidateWays, isPitLane, parseWays } from './overpass'
 import type { OsmWay } from './overpass'
 import monza from './fixtures/overpass-monza.json'
 
@@ -33,6 +33,29 @@ describe('buildQuery', () => {
 
   it('refuses anything that is not a Wikidata id (it is interpolated into the query)', () => {
     expect(() => buildQuery(around, 'Q1"];out;')).toThrow(/Wikidata id/)
+  })
+})
+
+describe('buildRegionHighwayQuery', () => {
+  const bbox: [number, number, number, number] = [-8.6531193, 40.9647783, -8.5936229, 41.0257665]
+  const q = buildRegionHighwayQuery(bbox)
+
+  it('filters on the same runnable highway classes porto-streets.json used, excludes motorway/trunk', () => {
+    expect(q).toMatch(/highway"~"\^\(residential\|living_street\|.*\|service\)\$"/)
+    expect(q).not.toMatch(/motorway|trunk/)
+  })
+
+  it('writes the bbox as south,west,north,east (Overpass order), not the stored west/south/east/north order', () => {
+    expect(q).toContain('(40.964778,-8.653119,41.025767,-8.593623)')
+  })
+
+  it('outputs the ways and every node they need, same shape parseWays reads', () => {
+    expect(q).toMatch(/\.ways >;\s*out skel qt;/)
+  })
+
+  it('rejects an inverted bbox', () => {
+    expect(() => buildRegionHighwayQuery([bbox[2], bbox[1], bbox[0], bbox[3]])).toThrow(/west < east/)
+    expect(() => buildRegionHighwayQuery([bbox[0], bbox[3], bbox[2], bbox[1]])).toThrow(/south < north/)
   })
 })
 
