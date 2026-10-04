@@ -44,8 +44,10 @@ gitignored `.cache/`; the shipped site never fetches.
 ## Layout
 
 - `src/` — application code and colocated `*.test.ts` files.
-- `src/data/` — bundled data (`circuits.json`, `routes/`, `porto-streets.json`,
-  `regions/` — non-Porto regions' street networks, Phase 26).
+- `src/data/` — bundled data: `circuits.json`, `routes/` (generated routes),
+  `regions/` — every region's street network, Phase 26, including Porto's own
+  (`porto-streets.json`, Phase 3's original asset, moved here 2026-10-04 for
+  directory consistency; content/schema unchanged).
 - `src/regions.ts` — the official region ids/labels/bboxes; lightweight, no
   street data, safe for the browser bundle.
 - `src/extract/` — dev-only pure modules behind `find-route`/`extract-region`

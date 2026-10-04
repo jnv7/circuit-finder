@@ -484,7 +484,7 @@ function projectionFor(regionId: RegionId): LocalProjection {
 // time, since the picker only ever surfaces the global top 3 — Phase 26), and
 // that the outline it draws is where the generator measured it.
 // Generous timeout: iterates every route of every committed file (now up to
-// 15 per circuit across 5 regions, Phase 26) — same load-sensitivity
+// 15+ per circuit across every region, Phase 26) — same load-sensitivity
 // precedent as graph.test.ts/app/map.test.ts (Phase 16).
 describe('committed route files, on the page', { timeout: 30_000 }, () => {
   const modules = import.meta.glob('../data/routes/*.json', { eager: true }) as Record<string, { default: unknown }>

@@ -2,7 +2,7 @@
 // "runnable" ways (ODbL), stored compactly and indexed in a uniform spatial
 // grid so nearest-street distance is a pure, fast, offline query. The app never
 // calls Overpass at runtime. See src/data/porto-streets.schema.md.
-import rawStreets from './data/porto-streets.json'
+import rawStreets from './data/regions/porto-streets.json'
 import type { Attribution } from './attribution'
 import { validateAttribution } from './attribution'
 import type { LocalProjection, LonLat } from './geo'

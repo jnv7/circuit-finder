@@ -59,6 +59,12 @@ Vila Nova de Gaia's reaching inland past Valongo. Resolved:
   boundaries, and Póvoa has no street file at all. `generate-route`/
   `find-route` will fail loudly on Póvoa if run without `--region` until its
   data is fetched — accepted as honest, not a silent wrong result.
+- **Tidied, same day**: `src/data/porto-streets.json` (Phase 3's original
+  asset) moved to `src/data/regions/porto-streets.json`, alongside the
+  regions this phase added — content and schema unchanged, only the one
+  real import (`src/streets.ts`) and doc-comment paths updated. Prompted by
+  a direct question ("os dados do Porto não deviam estar em regions como os
+  outros?") rather than found independently.
 
 Remaining:
 

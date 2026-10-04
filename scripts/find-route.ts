@@ -43,7 +43,7 @@ const USAGE = `Usage: npm run find-route -- "<circuit name>" [flags]
   --id, --name           override the derived id / display name
   --lat, --lon           override the circuit's centre
   --scale N              scale passed to the route generator (default 1)
-  --region id            search only this region (repeatable; default: all 5, src/regions.ts)
+  --region id            search only this region (repeatable; default: every region in src/regions.ts)
   --offline              use the response cache only`
 
 function fail(message: string, code = 1): never {

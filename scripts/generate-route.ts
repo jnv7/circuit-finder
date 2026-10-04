@@ -5,7 +5,7 @@
 //
 //   npm run generate-route -- <circuitId> [--scale N] [--region id ...]
 //
-// `--region` may be repeated to search a subset; omitted, all 5 regions in
+// `--region` may be repeated to search a subset; omitted, every region in
 // src/regions.ts are searched (Phase 26). The work itself lives in
 // scripts/lib/generate.ts (shared with `find-route`). See
 // docs/specs/phase-22-route-generator.md and

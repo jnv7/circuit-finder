@@ -2,9 +2,13 @@
 // against. Deliberately lightweight — no street data, so this module is safe
 // to import from the browser-bundled routes page (`app/routesPage.ts`) as
 // well as the dev-only generator (`scripts/lib/`); each region's full street
-// network lives only in `src/data/porto-streets.json` (Porto) or
-// `src/data/regions/<id>-streets.json` (the others), loaded only by the
-// generator, never fetched or bundled at runtime by either page. Maia and
+// network lives only in `src/data/regions/<id>-streets.json` (Porto's own,
+// Phase 3's original asset, lives there too — 2026-10-04, moved for
+// directory consistency with the regions this phase added, no content
+// change), loaded only by the generator, never fetched or bundled at
+// runtime by either page except Porto's, which `src/app/map.ts`'s manual
+// tool also bundles directly (via `src/streets.ts`'s default import) since
+// it predates this phase. Maia and
 // Gondomar are deliberately not allocated ids yet (see
 // docs/specs/phase-26-regional-search.md) — adding them later only grows
 // `REGIONS`, no existing id changes.
@@ -34,7 +38,8 @@ export type RegionMeta = {
   id: RegionId
   label: string
   /** `[west, south, east, north]`, decimal degrees. Porto's is
-   *  `porto-streets.json`'s own bbox (untouched, out of scope this phase).
+   *  `regions/porto-streets.json`'s own bbox (content untouched, out of
+   *  scope this phase — only its directory moved).
    *  The others are hand-set (2026-10-04 revision, see the module comment)
    *  from real fetched reference points — not simply each concelho's own
    *  admin-boundary bbox any more. Used by the routes page's map indicator;

@@ -1,7 +1,7 @@
-// Phase 26: load any of the 5 regions' full street networks for the
-// generator. Dev-only (Node `fs`) — never imported by the browser app, which
-// only ever needs `src/regions.ts`'s lightweight id/label/bbox list, not the
-// street data itself.
+// Phase 26: load any region's full street network for the generator.
+// Dev-only (Node `fs`) — never imported by the browser app, which only ever
+// needs `src/regions.ts`'s lightweight id/label/bbox list, not the street
+// data itself.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export type RegionNetwork = { network: StreetNetwork; project: LocalProjection }
 
 /**
- * `porto` loads the bundled `porto-streets.json` with its own fixed-origin
+ * `porto` loads the bundled `regions/porto-streets.json` with its own fixed-origin
  * projection (`portoProjection`, unchanged default). Every other region loads
  * its committed `src/data/regions/<id>-streets.json` and projects it about
  * its own bbox centre (`bboxCenterProjection`), so a region tens of km from
