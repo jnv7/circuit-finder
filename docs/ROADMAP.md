@@ -6,6 +6,114 @@ ideas. See [VISION.md](VISION.md) for the product goal and
 
 ## Current priority
 
+**2026-10-05 — Phase 28 done: the circuit list (formerly the dev-only
+`preview.html`) is now the production home page (`index.html`); the
+Generated routes page moved to `routes.html`. The Phase 26 revised-boundary
+regeneration below is still the next open, separately-tracked thread.**
+
+Prompted by the user: browsing straight to a circuit's shape, then its route,
+is a more natural entry than picking one from the routes page's own dropdown
+first. `src/previewMain.ts`/`previewPage.ts` (dev-only, never in the
+production build) are renamed `homeMain.ts`/`homePage.ts` and wired into
+`index.html`; a circuit without a generated route shows disabled (dimmed,
+not a link) instead of clickable. Clicking an available circuit links to
+`routes.html#<circuitId>` — a new circuit-only hash form
+(`src/app/routesHash.ts`'s `parseCircuitHash`/`formatCircuitHash`) that the
+routes page resolves to that circuit's best route among the checked regions,
+alongside the existing bookmarkable `#circuit/region/rank` form. No change
+to route search, generation, or extraction.
+
+<details>
+<summary>Previous priority (2026-10-05, find-route split into extract-circuit/
+generate-route), superseded above but still current — Phase 28 only
+changes navigation between pages, not the CLIs</summary>
+
+**2026-10-05 — Phase 27 done: `find-route` split into `extract-circuit`
+(fetch a circuit's data) and `generate-route` (search its route in the
+region meshes); the Phase 26 revised-boundary regeneration below is still
+the next open, separately-tracked thread.**
+
+Prompted by the user: with every F1-calendar circuit fetched at least once,
+stage 1 (data fetch) won't run again for a while, while stage 2 (route
+search) keeps running regularly — splitting them means a stage-2-only run no
+longer carries stage 1's flags and code path along with it.
+[specs/phase-27-split-extraction-and-search-cli.md](specs/phase-27-split-extraction-and-search-cli.md).
+`scripts/find-route.ts` is deleted; `scripts/extract-circuit.ts` is stage 1
+alone (same extraction logic, flags and refusal messages, unchanged);
+`generate-route.ts` (already stage-2-only) gained the final per-region/
+bar-misses summary `find-route` used to print, so nothing is lost. No
+change to extraction or search behaviour. `extract-region` (region
+street-mesh fetching) was already separate and is untouched.
+
+<details>
+<summary>Previous priority (2026-10-04 later, find-route street-circuit
+fallback), superseded above but still an open, separately-tracked thread
+(Phase 26 regeneration)</summary>
+
+**2026-10-04 (later) — `find-route` now extracts a street circuit
+automatically from just `--official-length-m`, verified live against
+Monaco and Marina Bay Street Circuit; Phase 26's revised-boundary
+regeneration (previous entry, below) is still running in the background in
+parallel.**
+
+Prompted directly by the user hitting the wall this session's earlier
+street-circuit work (`--stitch-tolerance-m`, the `too-tangled` diagnostic)
+only partly solved: Madring and Marina Bay have a real Wikidata entity with
+a correct coordinate but no official-length statement (P2043), and
+`parseEntities` discarded the *whole* entity over that one missing field —
+forcing `--lat`/`--lon` back in by hand, data the tool had already fetched
+and thrown away. Separately, finding each circuit's OSM relation id meant
+raw Overpass queries run by hand outside the tool, three times this session.
+
+Fixed, both additive/backward-compatible (an already-working circuit is
+untouched):
+
+- `src/extract/wikidata.ts`: `TrackEntity.lengthM` is now optional;
+  `parseEntities` keeps an entity once it has a coordinate, regardless of
+  length. A name search alone now resolves an entity like Marina Bay's —
+  no `--wikidata` needed just because Wikidata is missing one field.
+- `src/extract/extract.ts`: when the point-radius `highway=raceway` search
+  finds no lap, and the operator didn't already pin `--relation`/`--way`,
+  automatically look up any OSM relation tagged `wikidata=<id>` (global,
+  exact-match, no bbox — confirmed live: Monaco, Madring and Marina Bay each
+  return exactly one relation this way, a mapper-maintained cross-reference,
+  not a fuzzy guess). A cheap sanity gate (its ways must sum to within 10%
+  of the official length) runs before trying to stitch it at a small
+  tolerance ladder (`DISCOVERY_STITCH_LADDER_M` = 5/15/30 m). Success is
+  recorded in `Provenance.notes`, never silent.
+- **Verified live, not just unit-tested**: `npm run find-route -- "Marina
+  Bay Street Circuit, Singapore" --official-length-m 4927 --dry-run` now
+  resolves the entity by name alone and finds a ring on the first pass
+  (4960 m, 0.8% off). `npm run find-route -- "Circuit de Monaco"
+  --official-length-m 3337 --refresh --dry-run` shows the fallback firing
+  for real: point-radius search fails, relation 148194 is found
+  automatically, tolerance 30 m closes it (3310 m, 0.8% off) — matching the
+  hand-run result from earlier in the session, now with one flag instead of
+  four.
+- 8 new tests (`wikidata.test.ts`: a real-shaped entity with coordinate but
+  no length survives; `overpass.test.ts`: the new lookup query/parser;
+  `extract.test.ts`: the full fallback succeeding, failing closed when no
+  relation matches, and never firing over an explicit `--relation`, using a
+  faithfully-scoped slice of the real Monza fixture, not the whole thing).
+  541/541, `tsc --noEmit` and `npm run build` clean.
+
+**Incident, same evening**: the Phase 26 regeneration (below) was paused
+mid-run by killing only the current circuit's `node` process, not the shell
+`for` loop around it — the loop kept going unsupervised through 2 more
+circuits before this was noticed (via `ps aux` showing two parent shells
+both still alive). No data was corrupted (both loops compute the same
+thing), just wasted machine time; the orphan was killed once found. Lesson
+for next time: pausing a background batch needs the loop's own shell PID,
+not a process-name grep that only matches its current child.
+
+</details>
+
+</details>
+
+<details>
+<summary>Previous priority (2026-10-04, Phase 26 boundary revision),
+superseded above but still an open, separately-tracked thread</summary>
+
 **2026-10-04 — Phase 26 implemented and verified end to end against real
 data; region boundaries then revised a second time the same day (now 6
 regions) based on a map-based review, with that revision's data generation
@@ -343,6 +451,8 @@ only changes which point a sample resolves to, Phase 12 only changes which
 poses get proposed and how the final list is spread). Full story: the Phase
 10/11/12 decision-log entries below and
 [specs/phase-10-best-effort-routed-loops.md](specs/phase-10-best-effort-routed-loops.md).
+
+</details>
 
 </details>
 
@@ -810,7 +920,7 @@ the URL hash (`#silverstone/2`, `app/routesHash.ts`). The deploy smoke check
 now covers both pages. Two acceptance steps remain open (GPX in the receiving
 app; the deploy check's first real run) — see the decision log, 2026-09-21.
 
-### Phase 24 — `find-route`: from a circuit's name to a stored Porto route — `done`
+### Phase 24 — `find-route`: from a circuit's name to a stored Porto route — `done` (CLI split into `extract-circuit`/`generate-route` by Phase 27)
 
 Spec: [specs/phase-24-find-route-by-name.md](specs/phase-24-find-route-by-name.md).
 `npm run find-route -- "Monza"`: reuse the circuit if bundled, otherwise resolve
@@ -885,6 +995,18 @@ mechanics — now a quality choice, not a cost blocker; one route file per
 circuit vs. per circuit-region; `--region` CLI granularity); see the spec's
 "Open questions".
 
+### Phase 27 — Split `find-route` into `extract-circuit` + `generate-route` — `done`
+
+Spec: [specs/phase-27-split-extraction-and-search-cli.md](specs/phase-27-split-extraction-and-search-cli.md).
+`find-route.ts` mixed two concerns — fetch a circuit's data, then
+immediately search its route — behind one command, so every stage-2-only
+use had to carry stage 1's flags and code path along. Split into
+`extract-circuit` (circuit name → `circuits.json`, nothing else) and
+`generate-route` (already stage-2-only; unchanged except it now also prints
+the final per-region/bar-misses summary `find-route` used to). No change to
+extraction or search behaviour. `extract-region` was already separate and
+is untouched.
+
 ### Later — classified by cost and benefit (2026-09-15)
 
 Not a commitment list — a rated menu, reassessed as real usage (and the
@@ -933,6 +1055,144 @@ goal, not effort spent.
 ## Decision log
 
 Newest first. Each entry dated.
+
+- **2026-10-05 — Phase 28: the circuit list becomes the home page, each
+  circuit links straight into the routes page.** Prompted by the user:
+  browsing a circuit's shape and then its route is a more natural path in
+  than picking one from the routes page's own dropdown first.
+  `src/previewMain.ts`/`previewPage.ts` — dev-only, not part of the
+  production build, Phase 24's quick visual sanity check after an
+  extraction — are renamed `homeMain.ts`/`homePage.ts`, gain an
+  `availableIds` dependency (same set `routesMain.ts` already builds from
+  `import.meta.glob('./data/routes/*.json')`), and are wired into
+  `index.html`, which `preview.html` is folded into. The old `index.html`
+  (the routes page) is renamed `routes.html`; `vite.config.ts`'s
+  `rollupOptions.input` gains the `index` entry alongside `routes` and
+  `manual`. Each circuit card with a generated route is now an `<a
+  href="routes.html#<id>">`; one without is rendered as a disabled,
+  unlinked `<article>` ("No route generated yet") instead — `.preview-*`
+  CSS classes renamed `.home-*` to match. The link needed a circuit-only
+  hash the routes page didn't have: `src/app/routesHash.ts` gains
+  `parseCircuitHash`/`formatCircuitHash` for the bare `#<circuitId>` form,
+  used as a fallback alongside the existing `#circuit/region/rank` one
+  (`routesPage.ts`'s `select()` already falls back to the best route when
+  region/rank are unset, so no change there beyond trying the new parser).
+  The routes panel's dormant `← Circuit finder tool` back-link (self-
+  referential since Phase 25 moved the routes page to `index.html`, broken
+  from `'./'` never having been updated) now correctly resolves to the new
+  `index.html`; relabelled `← All circuits`. No change to route search,
+  generation, or extraction.
+- **2026-10-05 — Phase 27: `find-route` split into `extract-circuit` and
+  `generate-route`.** Prompted by the user: every circuit on the current
+  calendar has now been fetched at least once, so stage 1 (data fetch) is
+  not expected to run again for a while, while stage 2 (route search) keeps
+  running regularly — every stage-2-only use of `find-route` had to carry
+  stage 1's flags and code path along with it for no reason.
+  `scripts/find-route.ts` deleted; `scripts/extract-circuit.ts` is its
+  stage 1 alone (same `extractCircuit`/`applyExtraction` pipeline, same
+  flags and refusal messages — no behaviour change), renamed identity
+  (`USER_AGENT`, `.cache/extract-circuit/`), and prints `next: npm run
+  generate-route -- <id>` on success. `generate-route.ts` (already
+  stage-2-only) gained the final per-region/bar-misses summary `find-route`
+  used to print after generation — previously it only logged progress as it
+  ran — so the split loses nothing. `extract-region` (region street-mesh
+  fetching) was already a separate single-purpose CLI and needed no change.
+  Doc comments describing current behaviour (`src/extract/*.ts` headers,
+  `scripts/lib/generate.ts`, `src/regions.ts`, `src/circuits.test.ts`,
+  `src/data/circuits.schema.md`'s Provenance section, `CLAUDE.md`,
+  `package.json`, `.gitignore`) updated to name `extract-circuit`; past
+  decision-log entries and specs are left as written, since they describe
+  what was true on the date they were written. No `RELEASES.md` entry —
+  dev-only tooling, invisible to the deployed site, same treatment as
+  Phases 19/21/22/26.
+- **2026-10-04 (later) — `find-route` auto-resolves a street circuit from
+  just `--official-length-m`**, closing the gap the previous entry's
+  `--stitch-tolerance-m`/`too-tangled` work left open: Madring and Marina
+  Bay Street Circuit have a real Wikidata entity with a correct coordinate
+  but no official-length statement (P2043), and the resolver discarded the
+  *whole* entity over that one missing field, forcing `--lat`/`--lon` back
+  in by hand — data already fetched and thrown away. Separately, finding
+  each circuit's OSM relation id meant raw Overpass queries run by hand
+  outside the tool (three times this session: Monaco, Madring, Marina Bay).
+  Two additive, backward-compatible fixes (an already-working circuit is
+  untouched — see `docs/ROADMAP.md`'s "Current priority" entry of this date
+  for the full file-level detail):
+  - `TrackEntity.lengthM` is now optional in `src/extract/wikidata.ts`; an
+    entity with a coordinate but no length is kept, not discarded, so a
+    plain name search resolves it unaided.
+  - `src/extract/extract.ts`: when the point-radius `highway=raceway` search
+    finds nothing and the operator didn't pin `--relation`/`--way`
+    themselves, automatically look up the OSM relation tagged
+    `wikidata=<id>` (global, exact tag match — confirmed live for all three
+    circuits, each returning exactly one relation), sanity-check its ways
+    sum close to the official length, then retry the ring search at a small
+    widening tolerance ladder (5/15/30 m). Recorded in `Provenance.notes`,
+    never silent; never fires over an explicit `--relation`/`--way`.
+  - **Verified live**: Marina Bay now resolves from `--official-length-m
+    4927` alone (name search finds the entity, point-radius search succeeds
+    unaided, 0.8% off). Monaco's `--refresh --dry-run --official-length-m
+    3337` (no other flags) shows the fallback firing for real — point-radius
+    search fails, relation 148194 found automatically, 30 m tolerance closes
+    it at 0.8% off — matching the hand-run result from the previous entry,
+    now one flag instead of four.
+  - 8 new tests across `wikidata.test.ts`/`overpass.test.ts`/`extract.test.ts`
+    (the last using a faithfully-scoped slice of the real Monza fixture — a
+    first attempt reusing the whole fixture false-failed the sanity gate,
+    caught before landing). 541/541, `tsc --noEmit` and `npm run build` clean.
+  - **Found and fixed the same evening, unrelated**: Phase 26's regeneration
+    batch (previous entry) had been "paused" by killing only the current
+    circuit's process, not the shell loop around it — it kept running
+    unsupervised through 2 more circuits before `ps aux` caught two parent
+    shells both still alive. No data corrupted, just doubled compute time;
+    the orphan was killed once found.
+
+- **2026-10-04 — `find-route` can now extract street circuits (Monaco, COTA
+  tested live and confirmed), via two small, additive, backward-compatible
+  changes** prompted directly by the user hitting this wall with Monaco and
+  Madrid ("Madring"). Diagnosed, not guessed: both have a dedicated OSM route
+  relation grouping their lap's ordinary street ways (already fetchable via
+  `--relation`, which never filtered by `highway=raceway`), but two separate
+  problems blocked extraction even once the relation was fetched:
+  - **Real street joints are wider than a dedicated racetrack's own mapped
+    gaps.** `findRings`' endpoint-bridging tolerance (`STITCH_FALLBACK_M`,
+    5 m — fine for one continuously-mapped `highway=raceway` way) was too
+    tight for Monaco's lap, stitched from 41 ordinary street ways: their
+    summed length (3388 m) already matched the official 3337 m almost
+    exactly, but the one real closing gap was ~18 m. New opt-in
+    `--stitch-tolerance-m` flag (`ExtractOptions.stitchToleranceM`, threaded
+    into `findRings`'s new third parameter, default unchanged) lets a run
+    widen it per-circuit. **Verified live**: `--relation 148194
+    --stitch-tolerance-m 20` extracts Monaco at 3325 m (0.4% off), all ways
+    relation members.
+  - **A separate layout sharing pavement with the main lap explodes the
+    cycle count.** Circuit of the Americas' "COTA Short Track" (a different,
+    shorter configuration) touches the Grand Prix lap's own ways at 26
+    junctions, where every genuine "Turn N" segment touches only 2-4 — this
+    combinatorially blew past `MAX_CYCLES`/`MAX_STEPS`, and `findRings` threw
+    a plain, non-diagnostic `Error` the operator had no way to act on beyond
+    guessing at `--exclude-ways`. New `findJunctionOffenders` (`rings.ts`)
+    ranks candidate ways by how many 3+-way junctions each touches — the
+    offending way stands out immediately, by construction, not by name
+    pattern-matching. `findRings`'s two "too tangled" throw sites now raise a
+    dedicated `TooManyCyclesError`; `extractCircuit` catches exactly that
+    (not genuine failures), runs the diagnostic, and returns a `refused`
+    result (new code `too-tangled`) naming the top offenders and a concrete
+    `--exclude-ways` suggestion, instead of crashing stage 1 outright.
+    **Verified live**: COTA's own refusal message named `1482931764 "COTA
+    Short Track"` as the top offender on the first try; `--exclude-ways
+    1482931764` then extracted it cleanly at 5502 m (0.2% off).
+  - Madrid's own relation (`18813472`, "MadRing") exists too, but its
+    Wikidata entity (`Q126193406`) has no coordinate/length yet (a 2026
+    addition) — needs `--lat`/`--lon`/`--official-length-m` supplied by hand
+    before the same path applies; not attempted live.
+  - Neither circuit was actually added to `circuits.json` in this pass —
+    both runs above were `--dry-run`. Adding them for real (and generating
+    their routes) is a follow-up, not done here.
+  - 5 new tests (`rings.test.ts`: `findJunctionOffenders` unit coverage, the
+    `stitchToleranceM` threading, `TooManyCyclesError`'s identity;
+    `extract.test.ts`: the full too-tangled-to-refused integration path via a
+    synthetic 101-rung ladder fixture, C(101,2) = 5050 cycles). 533/533,
+    `tsc --noEmit` and `npm run build` clean.
 
 - **2026-10-03 — Phase 25 shipped: routes page is now the site root; the route
   picker shows real deviation numbers and a "Best" marker per circuit; the

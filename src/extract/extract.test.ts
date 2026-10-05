@@ -38,7 +38,7 @@ function fake(search: Record<string, string[]> = {}): Fake {
   return { deps, requests, logs }
 }
 
-// Without Monza: once `find-route` has added it to the bundle, these tests must still extract it afresh.
+// Without Monza: once `extract-circuit` has added it to the bundle, these tests must still extract it afresh.
 const existing = loadCircuits().filter((c) => c.id !== 'monza')
 const run = (query: string, opts: ExtractOptions = {}, f: Fake = fake()): Promise<ExtractResult> =>
   extractCircuit(query, existing, opts, f.deps)
@@ -110,6 +110,103 @@ describe('extractCircuit — name to a validated circuit (Monza fixtures)', () =
   })
 })
 
+describe('extractCircuit — relation auto-discovery fallback (street circuits)', () => {
+  const RELATION_LOOKUP = 'relation["wikidata"="Q171417"]'
+  const RELATION_WAYS = 'rel(284565)->.rels;'
+
+  // A real `buildElementQuery({relation: 284565})` fetch returns only that
+  // relation's own 21 member ways — not the 30 other nearby raceway ways
+  // (Monza's banked oval, alternate layouts) the bundled fixture's broader
+  // near-point query also pulled in. Filtering here, once, keeps the fake
+  // faithful to that scoped shape without a second fixture file to maintain.
+  const monzaRelationOnly = (() => {
+    const els = (overpassMonza as { elements: Array<Record<string, unknown>> }).elements
+    const rel = els.find((e) => e['type'] === 'relation')!
+    const memberWayIds = new Set(
+      (rel['members'] as Array<{ type: string; ref: number }>).filter((m) => m.type === 'way').map((m) => m.ref),
+    )
+    const ways = els.filter((e) => e['type'] === 'way' && memberWayIds.has(e['id'] as number))
+    const nodeIds = new Set(ways.flatMap((w) => w['nodes'] as number[]))
+    const nodes = els.filter((e) => e['type'] === 'node' && nodeIds.has(e['id'] as number))
+    return { elements: [rel, ...ways, ...nodes] }
+  })()
+
+  /** Point-radius search finds nothing (as for a real street circuit with no
+   *  highway=raceway nearby); the circuit's own OSM relation (284565, real
+   *  Monza fixture data) is only reachable via the wikidata-tag lookup. */
+  function fakeNoNearbyRaceway(): Fake {
+    const requests: string[] = []
+    const logs: string[] = []
+    const deps: ExtractDeps = {
+      today: () => '2026-09-28',
+      log: (m) => void logs.push(m),
+      getJson: async (req: JsonRequest) => {
+        const url = req.urls[0]!
+        const body = req.body ? decodeURIComponent(req.body) : ''
+        requests.push(`${url}${body ? ` ${body}` : ''}`)
+        if (url.includes('wbgetentities')) {
+          const ids = decodeURIComponent(/ids=([^&]*)/.exec(url)![1]!).split('|')
+          const all = (entitiesFixture as { entities: Record<string, unknown> }).entities
+          return { entities: Object.fromEntries(ids.filter((i) => all[i]).map((i) => [i, all[i]])) }
+        }
+        if (url.includes('overpass')) {
+          if (body.includes(RELATION_LOOKUP)) {
+            return { elements: [{ type: 'relation', id: 284565, tags: { name: 'Autodromo Nazionale di Monza', wikidata: 'Q171417' } }] }
+          }
+          if (body.includes(RELATION_WAYS)) return monzaRelationOnly
+          return { elements: [] } // the initial point-radius search
+        }
+        throw new Error(`unexpected request ${url}`)
+      },
+    }
+    return { deps, requests, logs }
+  }
+
+  it('auto-discovers the circuit’s own wikidata-tagged relation and extracts from it', async () => {
+    const f = fakeNoNearbyRaceway()
+    const { circuit, provenance } = extracted(await run('Monza', { wikidata: 'Q171417' }, f))
+    expect(circuit.id).toBe('monza')
+    expect(circuit.officialLengthM).toBe(5793)
+    expect(provenance.notes.join(' ')).toMatch(/auto-discovered via its own OSM relation 284565 \(wikidata=Q171417\)/)
+    expect(f.logs.join('\n')).toMatch(/found OSM relation 284565 tagged wikidata=Q171417/)
+  })
+
+  it('falls through to the normal refusal, noting the relation path was tried, when no relation matches either', async () => {
+    const f = fakeNoNearbyRaceway()
+    const deps: ExtractDeps = {
+      ...f.deps,
+      getJson: async (req) => {
+        const body = req.body ? decodeURIComponent(req.body) : ''
+        if (req.urls[0]!.includes('overpass') && body.includes(RELATION_LOOKUP)) return { elements: [] }
+        return f.deps.getJson(req)
+      },
+    }
+    const result = await run('Monza', { wikidata: 'Q171417' }, { ...f, deps })
+    expect(result.kind).toBe('refused')
+    if (result.kind === 'refused') {
+      expect(result.code).toBe('no-ring')
+      expect(result.message).toMatch(/no OSM relation of its own worked either/)
+    }
+  })
+
+  it('never overrides an explicit --relation, even when that relation’s own ways find nothing', async () => {
+    const f = fakeNoNearbyRaceway()
+    const deps: ExtractDeps = {
+      ...f.deps,
+      getJson: async (req) => {
+        const body = req.body ? decodeURIComponent(req.body) : ''
+        if (req.urls[0]!.includes('overpass') && body.includes('rel(999)->.rels;')) return { elements: [] }
+        return f.deps.getJson(req)
+      },
+    }
+    const result = await run('Monza', { wikidata: 'Q171417', relation: 999 }, { ...f, deps })
+    expect(result.kind).toBe('refused')
+    // The auto-discovery lookup (and its "tried the relation" hint) must never fire for an explicit --relation.
+    expect(f.requests.some((r) => r.includes(RELATION_LOOKUP))).toBe(false)
+    if (result.kind === 'refused') expect(result.message).not.toMatch(/auto-discovered|OSM relation of its own/)
+  })
+})
+
 describe('extractCircuit — refusals (never a guess)', () => {
   it('refuses when Wikidata has no such racetrack, saying what to pass instead', async () => {
     const result = await run('Nowhereville')
@@ -148,6 +245,59 @@ describe('extractCircuit — refusals (never a guess)', () => {
       expect(result.message).toMatch(/refusing to guess[\s\S]*m \(\d+\.\d% off 9000 m\)/)
     }
   })
+
+  it('--pick N extracts the Nth candidate from an otherwise-ambiguous refusal instead of refusing', async () => {
+    const result = await run('Monza', { officialLengthM: 9000, lat: 45.6206, lon: 9.2894, pick: 1 })
+    const { circuit, provenance } = extracted(result)
+    expect(circuit.officialLengthM).toBe(9000)
+    expect(provenance.notes.join(' ')).toMatch(/manually pinned via --pick 1/)
+  })
+
+  it('--pick out of range still refuses, naming how many candidates were listed', async () => {
+    const result = await run('Monza', { officialLengthM: 9000, lat: 45.6206, lon: 9.2894, pick: 99 })
+    expect(result.kind).toBe('refused')
+    if (result.kind === 'refused') {
+      expect(result.code).toBe('ambiguous-ring')
+      expect(result.message).toMatch(/--pick 99 is out of range/)
+    }
+  })
+
+  it('refuses, instead of throwing, when the way graph has too many candidate laps — and says why', async () => {
+    // A ladder of many rungs has C(n, 2) simple cycles (every pair of rungs
+    // closes one) — real shape of the Circuit of the Americas failure this
+    // guards: a dense mesh of legitimate alternate pairings, not a crash.
+    const elements: unknown[] = []
+    let nodeId = 1
+    const nodeIdAt = new Map<string, number>()
+    const nodeAt = (key: string, lon: number, lat: number): number => {
+      let id = nodeIdAt.get(key)
+      if (id === undefined) {
+        id = nodeId++
+        nodeIdAt.set(key, id)
+        elements.push({ type: 'node', id, lon, lat })
+      }
+      return id
+    }
+    let wayId = 1
+    const rungs = 101 // C(101, 2) = 5050 > MAX_CYCLES (5000)
+    for (let i = 0; i < rungs; i++) {
+      elements.push({ type: 'way', id: wayId++, nodes: [nodeAt(`t${i}`, i * 0.001, 45), nodeAt(`b${i}`, i * 0.001, 44.999)], tags: { highway: 'raceway' } })
+      if (i > 0) {
+        elements.push({ type: 'way', id: wayId++, nodes: [nodeAt(`t${i - 1}`, (i - 1) * 0.001, 45), nodeAt(`t${i}`, i * 0.001, 45)], tags: { highway: 'raceway' } })
+        elements.push({ type: 'way', id: wayId++, nodes: [nodeAt(`b${i - 1}`, (i - 1) * 0.001, 44.999), nodeAt(`b${i}`, i * 0.001, 44.999)], tags: { highway: 'raceway' } })
+      }
+    }
+    const f = fake()
+    const tangled: ExtractDeps = { ...f.deps, getJson: async (req) => (req.urls[0]!.includes('overpass') ? { elements } : f.deps.getJson(req)) }
+    const result = await run('Monza', {}, { ...f, deps: tangled })
+    expect(result.kind).toBe('refused')
+    if (result.kind === 'refused') {
+      expect(result.code).toBe('too-tangled')
+      expect(result.message).toMatch(/too tangled to search|too many candidate laps/)
+      expect(result.message).toMatch(/Most likely culprit/)
+      expect(result.message).toMatch(/--exclude-ways \d+/)
+    }
+  }, 20_000)
 
   it('throws before anything is written when the id already exists', async () => {
     const taken: Circuit[] = [...existing, { ...existing[0]!, id: 'monza' }]

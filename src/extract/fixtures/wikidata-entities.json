@@ -489,6 +489,57 @@
     "P2043": []
    }
   },
+  "Q171390": {
+   "id": "Q171390",
+   "labels": {
+    "en": {
+     "language": "en",
+     "value": "Marina Bay Street Circuit"
+    }
+   },
+   "descriptions": {
+    "en": {
+     "language": "en",
+     "value": "motorsport track in Singapore"
+    }
+   },
+   "claims": {
+    "P31": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "entity-type": "item",
+         "numeric-id": 926439,
+         "id": "Q926439"
+        },
+        "type": "wikibase-entityid"
+       }
+      },
+      "rank": "normal"
+     }
+    ],
+    "P625": [
+     {
+      "mainsnak": {
+       "snaktype": "value",
+       "datavalue": {
+        "value": {
+         "latitude": 1.291403,
+         "longitude": 103.864147,
+         "altitude": null,
+         "precision": null,
+         "globe": "http://www.wikidata.org/entity/Q2"
+        },
+        "type": "globecoordinate"
+       }
+      },
+      "rank": "normal"
+     }
+    ]
+   }
+  },
   "Q172851": {
    "id": "Q172851",
    "labels": {

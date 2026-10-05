@@ -312,6 +312,14 @@ describe('routes page', () => {
       expect(selected(c)).toEqual({ region: 'porto', rank: '1' })
     })
 
+    it('loading with just "#<circuit>" (the home page’s link) selects its best route', async () => {
+      history.replaceState(null, '', '#silverstone')
+      const c = await mount()
+      expect(role<HTMLSelectElement>(c, 'circuit').value).toBe('silverstone')
+      expect(selected(c)).toEqual({ region: 'porto', rank: '1' })
+      expect(window.location.hash).toBe('#silverstone/porto/1')
+    })
+
     it('follows the hash when it changes after load', async () => {
       const c = await mount()
       history.replaceState(null, '', '#silverstone/porto/2')

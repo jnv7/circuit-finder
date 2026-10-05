@@ -23,7 +23,7 @@ import { downloadFile } from './download'
 import { routeGpx, routeGpxFilename } from './gpx'
 import { formatDistance, overlayLatLngs } from './overlay'
 import { pickerSummaryLine, pickTopRoutes } from './routeSummary'
-import { formatHash, parseHash } from './routesHash'
+import { formatHash, parseCircuitHash, parseHash } from './routesHash'
 
 const ROUTE_COLOR = '#1565c0'
 const OUTLINE_COLOR = '#c62828'
@@ -99,7 +99,7 @@ export function createRoutesPage(
   const panelEl = el('aside', { className: 'panel routes-panel' })
   container.append(mapEl, panelEl)
 
-  const backLink = el('a', { className: 'page-link-inline', href: './', textContent: '← Circuit finder tool' })
+  const backLink = el('a', { className: 'page-link-inline', href: './', textContent: '← All circuits' })
   const heading = el('h1', { className: 'routes-heading', textContent: 'Generated routes' })
 
   const selectLabel = el('label', { className: 'control' })
@@ -346,6 +346,12 @@ export function createRoutesPage(
    *  a referenced region/rank doesn't exist or got filtered out). */
   type Selection = { circuitId: string; region?: string; rank?: number }
 
+  /** The full `#circuit/region/rank` form, or just `#circuit` (the home page's
+   *  circuit cards link this way, not knowing which route is best). */
+  function parseSelection(hash: string): Selection | null {
+    return parseHash(hash) ?? parseCircuitHash(hash)
+  }
+
   /** Select a route. An unknown circuit (or one with no file) falls back to the
    *  first available circuit; an unknown region/rank, or one filtered out by
    *  the current region checkboxes, falls back to the best route among the
@@ -419,14 +425,14 @@ export function createRoutesPage(
   })
 
   const onHashChange = (): void => {
-    const ref = parseHash(window.location.hash)
+    const ref = parseSelection(window.location.hash)
     if (!ref) return
     if (current && current.circuit.id === ref.circuitId && current.route?.region === ref.region && current.route?.rank === ref.rank) return
     void select(ref, { updateHash: false })
   }
   window.addEventListener('hashchange', onHashChange)
 
-  const ready = select(parseHash(window.location.hash))
+  const ready = select(parseSelection(window.location.hash))
 
   return {
     ready,

@@ -18,3 +18,20 @@ export function parseHash(hash: string): RouteRef | null {
 export function formatHash(ref: RouteRef): string {
   return `#${ref.circuitId}/${ref.region}/${ref.rank}`
 }
+
+/** A link to just a circuit, no region/rank — what the home page's circuit
+ *  cards use (they don't know which route is best): `#monza`. The routes
+ *  page resolves it to that circuit's best route among the checked regions. */
+export type CircuitRef = { circuitId: string }
+
+const CIRCUIT_HASH_RE = /^#?([A-Za-z0-9][A-Za-z0-9_-]*)$/
+
+export function parseCircuitHash(hash: string): CircuitRef | null {
+  const match = CIRCUIT_HASH_RE.exec(hash)
+  if (!match) return null
+  return { circuitId: match[1]! }
+}
+
+export function formatCircuitHash(ref: CircuitRef): string {
+  return `#${ref.circuitId}`
+}

@@ -3,5 +3,5 @@ dist/
 coverage/
 .DS_Store
 
-# find-route response cache (Phase 24)
+# extract-circuit response cache (Phase 24, split from find-route in Phase 27)
 .cache/

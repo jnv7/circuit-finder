@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { EQUIVALENT_M, PICK_MARGIN, collapseEquivalent, findRings, pickRing, rankRings, sameLap } from './rings'
+import {
+  EQUIVALENT_M,
+  PICK_MARGIN,
+  TooManyCyclesError,
+  collapseEquivalent,
+  findJunctionOffenders,
+  findRings,
+  pickRing,
+  rankRings,
+  sameLap,
+} from './rings'
 import type { RingCandidate } from './rings'
 import { candidateWays, parseWays } from './overpass'
 import type { OsmWay } from './overpass'
@@ -120,9 +130,17 @@ describe('findRings', () => {
     expect(rings[0]!.bridgedGapsM[0]).toBeCloseTo(3, 0)
   })
 
-  it('does not bridge a 50 m gap', () => {
+  it('does not bridge a 50 m gap at the default tolerance', () => {
     const far: Spot = ['B3', 1050, 0]
     expect(findRings([way(1, [A, B]), way(2, [far, C, D, A])])).toEqual([])
+  })
+
+  it('bridges a 50 m gap when a wider stitchToleranceM is given — a street circuit\'s real joints', () => {
+    const far: Spot = ['B3', 1050, 0]
+    const rings = findRings([way(1, [A, B]), way(2, [far, C, D, A])], undefined, 60)
+    expect(rings).toHaveLength(1)
+    expect(rings[0]!.bridgedGapsM).toHaveLength(1)
+    expect(rings[0]!.bridgedGapsM[0]).toBeCloseTo(50, 0)
   })
 
   it('throws, loudly, when there are more cycles than the cap', () => {
@@ -139,6 +157,7 @@ describe('findRings', () => {
     }
     expect(findRings(ways).length).toBe(28) // C(8, 2) — sanity: the ladder itself is searchable
     expect(() => findRings(ways, 10)).toThrow(/candidate laps/)
+    expect(() => findRings(ways, 10)).toThrow(TooManyCyclesError)
   })
 
   it('a pit lane that would create a shorter false lap is gone once pit lanes are dropped', () => {
@@ -155,6 +174,40 @@ describe('findRings', () => {
     const rings = findRings(candidateWays(ways))
     expect(rings).toHaveLength(1)
     expect(rings[0]!.wayIds).not.toContain(5)
+  })
+})
+
+describe('findJunctionOffenders', () => {
+  it('finds nothing to flag in a clean simple loop (no node used by 3+ ways)', () => {
+    const ways = [way(1, [A, B]), way(2, [B, C]), way(3, [C, D]), way(4, [D, A])]
+    expect(findJunctionOffenders(ways)).toEqual([])
+  })
+
+  // Reproduces the real Circuit of the Americas failure: the Grand Prix lap's
+  // own "Turn N" ways form a clean loop, but a separate "Short Track" layout
+  // shares pavement with it at several points, exploding the cycle count —
+  // see the ROADMAP decision log for the real numbers (26 shared junctions).
+  it('names the way crossing a clean loop at several points, ranked above the loop\'s own segments', () => {
+    const J1: Spot = ['J1', 1000, 0]
+    const J2: Spot = ['J2', 1000, 500]
+    const J3: Spot = ['J3', 0, 500]
+    const loop = [
+      way(1, [A, J1], { tags: { name: 'Turn 1' } }),
+      way(2, [J1, J2], { tags: { name: 'Turn 2' } }),
+      way(3, [J2, J3], { tags: { name: 'Turn 3' } }),
+      way(4, [J3, A], { tags: { name: 'Turn 4' } }),
+    ]
+    const crosser = way(5, [A, J1, J2, J3], { tags: { name: 'Short Track' } })
+    const offenders = findJunctionOffenders([...loop, crosser])
+    expect(offenders[0]).toEqual({ wayId: 5, name: 'Short Track', junctionCount: 4 })
+    // Each "Turn N" way touches at most the 2 junctions linking it to the crosser.
+    for (const o of offenders.slice(1)) expect(o.junctionCount).toBeLessThanOrEqual(2)
+  })
+
+  it('ignores a plain T-junction (only 2 ways) — minWays defaults to 3', () => {
+    const spur = way(2, [B, ['S', 1500, 0]])
+    const offenders = findJunctionOffenders([way(1, [A, B, C, D, A]), spur])
+    expect(offenders).toEqual([])
   })
 })
 

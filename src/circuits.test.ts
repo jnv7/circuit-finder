@@ -46,7 +46,7 @@ function makeCircuit(overrides: Partial<Circuit> = {}): Circuit {
 }
 
 describe('loadCircuits', () => {
-  it('returns the bundled circuits, the original three first (more are added by find-route)', () => {
+  it('returns the bundled circuits, the original three first (more are added by extract-circuit)', () => {
     const circuits = loadCircuits()
     expect(circuits.map((c) => c.id).slice(0, 3)).toEqual(['hungaroring', 'silverstone', 'catalunya'])
   })

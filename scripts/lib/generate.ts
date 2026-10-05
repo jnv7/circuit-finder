@@ -1,9 +1,11 @@
-// Stage 2 shared by `generate-route` and `find-route` (Phase 22, moved here in
-// Phase 24 with no behaviour change, regionalised in Phase 26): run the
-// offline route generator for one circuit against each requested region and
-// write one combined `src/data/routes/<circuitId>.json`. Nothing here runs in
-// the browser. See docs/specs/phase-22-route-generator.md and
-// docs/specs/phase-26-regional-search.md.
+// Stage 2, called by `generate-route` (Phase 22, moved here in Phase 24,
+// regionalised in Phase 26; `find-route` also called this until Phase 27
+// split it into `extract-circuit` + `generate-route`): run the offline route
+// generator for one circuit against each requested region and write one
+// combined `src/data/routes/<circuitId>.json`. Nothing here runs in the
+// browser. See docs/specs/phase-22-route-generator.md,
+// docs/specs/phase-26-regional-search.md and
+// docs/specs/phase-27-split-extraction-and-search-cli.md.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -115,8 +117,12 @@ function generateForRegion(
 /**
  * Generate and write the routes of `circuitId` against every region in
  * `regionIds`, which must be in `circuits` (passed in, not re-read from the
- * bundle, so a circuit added a moment ago by `find-route` is visible).
- * Returns the combined file it wrote.
+ * bundle, so a circuit added a moment ago by `extract-circuit` is visible).
+ * Returns the combined file it wrote — or, with `dryRun`, would have
+ * written: nothing under `src/data/routes/` is touched (Phase 27, after a
+ * live verification run overwrote a real circuit's in-progress route file —
+ * a real CLI run against real committed data must never be treated as a
+ * cheap, safe check; this flag is what makes a real run safe instead).
  */
 export function generateAndWriteRoute(
   circuits: readonly Circuit[],
@@ -124,6 +130,7 @@ export function generateAndWriteRoute(
   scale: number,
   regionIds: readonly RegionId[],
   log: (msg: string) => void,
+  dryRun = false,
 ): { file: RouteFile; path: string } {
   const circuit = circuits.find((c) => c.id === circuitId)
   if (!circuit) {
@@ -159,8 +166,12 @@ export function generateAndWriteRoute(
   validateRouteFile(routeFile, circuits.map((c) => c.id))
 
   const outDir = path.join(__dirname, '../../src/data/routes')
-  mkdirSync(outDir, { recursive: true })
   const outPath = path.join(outDir, `${circuitId}.json`)
+  if (dryRun) {
+    log(`dry run: ${outPath} not written.`)
+    return { file: routeFile, path: outPath }
+  }
+  mkdirSync(outDir, { recursive: true })
   writeFileSync(outPath, `${JSON.stringify(routeFile, null, 2)}\n`)
   log(`wrote ${outPath}`)
   return { file: routeFile, path: outPath }

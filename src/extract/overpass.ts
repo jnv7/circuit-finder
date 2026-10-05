@@ -1,5 +1,6 @@
-// Overpass query building and response parsing for `find-route` (Phase 24).
-// Pure — the HTTP lives in http.ts / scripts/find-route.ts.
+// Overpass query building and response parsing for `extract-circuit`
+// (Phase 24, split from `find-route` in Phase 27). Pure — the HTTP lives in
+// http.ts / scripts/extract-circuit.ts.
 //
 // The query is bounded twice, on purpose (found by probing the live service):
 // a bare-name or planet-wide tag search times out, and even an `around` filter
@@ -120,6 +121,21 @@ export function buildElementQuery(element: { relation: number } | { way: number 
   return ['[out:json][timeout:60];', `way(${element.way})->.ways;`, '.ways out body;', '.ways >;', 'out skel qt;'].join('\n')
 }
 
+/**
+ * Query for any OSM relation tagged with this Wikidata id — global, no bbox
+ * (confirmed live, fast: notable circuits carry this tag on the relation
+ * grouping their lap's ways, independent of the relation's own `type`/`sport`
+ * tags, which vary — Monaco is `type=circuit` + `sport=motor`, Marina Bay is
+ * `type=circuit` with no `sport` tag, Madring is `type=route` +
+ * `route=raceway`). Ids/tags only, no way geometry — cheap, used to decide
+ * *whether* a usable relation exists before fetching it with
+ * `buildElementQuery`.
+ */
+export function buildWikidataRelationLookupQuery(wikidataId: string): string {
+  if (!/^Q\d+$/.test(wikidataId)) throw new Error(`not a Wikidata id: ${wikidataId}`)
+  return ['[out:json][timeout:30];', `relation["wikidata"="${wikidataId}"];`, 'out ids tags;'].join('\n')
+}
+
 type OverpassElement = {
   type?: string
   id?: number
@@ -173,6 +189,13 @@ export function parseWays(json: unknown): OsmWay[] {
     })
   }
   return ways
+}
+
+/** Relation ids from a `buildWikidataRelationLookupQuery` response. */
+export function parseRelationIds(json: unknown): number[] {
+  const elements = (json as { elements?: unknown })?.elements
+  if (!Array.isArray(elements)) return []
+  return (elements as OverpassElement[]).flatMap((e) => (e.type === 'relation' && e.id !== undefined ? [e.id] : []))
 }
 
 // A pit lane by name: "Pit Lane", "Pitlane", "Pits", or a name that ends in "Pit"

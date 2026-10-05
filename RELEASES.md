@@ -8,6 +8,17 @@ Newest release first.
 
 ---
 
+## 0.18.0 — The circuit list is now the home page (2026-10-05)
+
+**Opening circuit-finder now shows every bundled circuit's shape first** —
+click one to jump straight to its generated routes. A circuit that hasn't
+been searched yet is shown greyed out, with a "No route generated yet" note,
+instead of a dead end once you got there.
+
+The old home page (the routes lookup) is still there, one click in, with its
+own circuit picker and region checkboxes if you want to switch circuits
+without going back.
+
 ## 0.17.0 — Search the whole metro area, not just Porto (2026-10-04)
 
 **The Generated routes page now searches Porto, Vila do Conde, Matosinhos,

@@ -1,4 +1,5 @@
-// Polite, resilient JSON fetching for `find-route` (Phase 24). Everything
+// Polite, resilient JSON fetching for `extract-circuit` (Phase 24, split
+// from `find-route` in Phase 27) and `extract-region` (Phase 26). Everything
 // that touches the outside world — fetch, sleeping, the clock, the cache — is
 // injected, so the retry/backoff/mirror/cache behaviour is tested offline.
 //

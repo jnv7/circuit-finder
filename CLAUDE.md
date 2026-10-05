@@ -23,23 +23,25 @@ npm run dev        # local dev server
 npm run test       # watch tests
 npm run test:run   # run tests once (used by CI)
 npm run build      # type-check (tsc --noEmit) + production build to dist/
-npm run find-route -- "Monza"     # dev-only: circuit name -> circuits.json + stored routes across the metro regions (Phase 24/26)
-npm run generate-route -- <id>    # dev-only: just the route generator for a bundled circuit, every region by default (Phase 22/26)
+npm run extract-circuit -- "Monza" # dev-only: circuit name -> circuits.json, nothing else (Phase 24/27)
+npm run generate-route -- <id>    # dev-only: route generator for a bundled circuit, every region by default (Phase 22/26/27)
 npm run extract-region -- <regionId> --bbox w,s,e,n  # dev-only: fetch+commit one region's street network (Phase 26)
 ```
 
-Both `find-route` and `generate-route` take a repeatable `--region <id>` flag
-(ids in `src/regions.ts`) to search only a subset; omitted, every region in
-`src/regions.ts` runs. **As of 2026-10-04, `src/regions.ts` has 6 official
-regions (added Póvoa de Varzim, revised 3 others' boundaries) but committed
-data hasn't caught up** — `src/data/regions/` and every `src/data/routes/
-*.json` still reflect the *previous* 5-region boundaries, and Póvoa has no
-street file at all yet. Running either CLI without `--region` fails loudly on
-Póvoa until that's fetched; see the ROADMAP decision log, 2026-10-04.
+`extract-circuit` fetches a circuit's data; it never touches routes.
+`generate-route` searches an already-bundled circuit's route against the
+region street meshes — run `extract-circuit` first if the circuit isn't
+bundled yet. `generate-route` takes a repeatable `--region <id>` flag (ids in
+`src/regions.ts`) to search only a subset; omitted, every region in
+`src/regions.ts` runs. As of 2026-10-05, `src/regions.ts`'s 6 regions (added
+Póvoa de Varzim, revised 3 others' boundaries) and every committed
+`src/data/regions/*-streets.json` / `src/data/routes/*.json` are back in
+sync — all 8 bundled circuits regenerated against the full 6-region set; see
+the ROADMAP decision log, 2026-10-04/05.
 
-`find-route`/`extract-region` use the network only to fetch (a new circuit via
-Wikidata + Overpass, or a region's street data via Overpass), cached in the
-gitignored `.cache/`; the shipped site never fetches.
+`extract-circuit`/`extract-region` use the network only to fetch (a new
+circuit via Wikidata + Overpass, or a region's street data via Overpass),
+cached in the gitignored `.cache/`; the shipped site never fetches.
 
 ## Layout
 
@@ -50,7 +52,7 @@ gitignored `.cache/`; the shipped site never fetches.
   directory consistency; content/schema unchanged).
 - `src/regions.ts` — the official region ids/labels/bboxes; lightweight, no
   street data, safe for the browser bundle.
-- `src/extract/` — dev-only pure modules behind `find-route`/`extract-region`
+- `src/extract/` — dev-only pure modules behind `extract-circuit`/`extract-region`
   (Wikidata/Overpass parsing, ring finding, region street-network building);
   not imported by the app. `scripts/` — the CLIs, `scripts/lib/` their shared
   logic (including `regionNetworks.ts`, which loads a region's full street

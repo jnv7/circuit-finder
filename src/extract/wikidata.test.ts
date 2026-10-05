@@ -87,7 +87,7 @@ describe('parseEntities', () => {
   const tracks = parseEntities(entitiesFixture)
 
   it('keeps racetracks with a coordinate and a length', () => {
-    expect(tracks.map((t) => t.id).sort()).toEqual(['Q171400', 'Q171417', 'Q172851'])
+    expect(tracks.map((t) => t.id).sort()).toEqual(['Q171390', 'Q171400', 'Q171417', 'Q172851'])
     const monza = tracks.find((t) => t.id === 'Q171417')!
     expect(monza.label).toBe('Monza Circuit')
     expect(monza.lengthM).toBe(5793)
@@ -97,6 +97,19 @@ describe('parseEntities', () => {
 
   it('accepts a street circuit and picks its current layout', () => {
     expect(tracks.find((t) => t.id === 'Q171400')!.lengthM).toBe(3337)
+  })
+
+  // Real entities found live this session: both correctly classified as a
+  // street circuit with a real coordinate, but Wikidata has no P2043
+  // (official length) statement for either — the entity itself is still
+  // worth keeping, with --official-length-m required to fill the gap.
+  it('keeps a correctly-classified racetrack that has a coordinate but no length (Marina Bay Street Circuit)', () => {
+    const marinaBay = tracks.find((t) => t.id === 'Q171390')!
+    expect(marinaBay).toBeDefined()
+    expect(marinaBay.label).toBe('Marina Bay Street Circuit')
+    expect(marinaBay.lengthM).toBeUndefined()
+    expect(marinaBay.lonLat[0]).toBeCloseTo(103.864147, 5)
+    expect(marinaBay.lonLat[1]).toBeCloseTo(1.291403, 5)
   })
 
   it('filters out layouts (no coordinate) and places (not a racetrack)', () => {

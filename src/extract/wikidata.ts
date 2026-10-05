@@ -1,6 +1,7 @@
-// Wikidata parsing for `find-route` (Phase 24): turn a name search and an
-// entity fetch into motorsport racetracks that have both a coordinate and an
-// official lap length. Pure — the HTTP lives in scripts/find-route.ts.
+// Wikidata parsing for `extract-circuit` (Phase 24, split from `find-route`
+// in Phase 27): turn a name search and an entity fetch into motorsport
+// racetracks that have both a coordinate and an official lap length. Pure —
+// the HTTP lives in scripts/extract-circuit.ts.
 
 /** Wikidata classes that count as a motorsport racetrack (recorded in the ROADMAP decision log). */
 export const RACETRACK_CLASSES: ReadonlySet<string> = new Set([
@@ -35,7 +36,11 @@ export type TrackEntity = {
   label: string
   description: string
   lonLat: [number, number]
-  lengthM: number
+  /** Official lap length, when Wikidata has a P2043 statement for it.
+   *  Missing on some real, correctly-classified entities (Madring, Marina Bay
+   *  Street Circuit, both confirmed live) — the entity is still usable, with
+   *  `--official-length-m` required to supply what Wikidata doesn't have. */
+  lengthM?: number
 }
 
 type Snak = { snaktype?: string; datavalue?: { value?: unknown } }
@@ -116,9 +121,13 @@ function coordinateOf(claims: Record<string, unknown> | undefined): [number, num
 }
 
 /**
- * Racetracks in a `wbgetentities` response that have both a coordinate and a
- * length. Layout entities (no coordinate), venues and places are filtered out;
- * `anyClass` skips the class check for an entity the operator named explicitly.
+ * Racetracks in a `wbgetentities` response that have at least a coordinate.
+ * Layout entities (no coordinate), venues and places are filtered out;
+ * `anyClass` skips the class check for an entity the operator named
+ * explicitly. `lengthM` is carried through as `undefined` when Wikidata has
+ * no P2043 statement — real, correctly-classified entities can lack it
+ * (confirmed live: Madring, Marina Bay Street Circuit) and are still worth
+ * resolving by name/coordinate, with `--official-length-m` filling the gap.
  */
 export function parseEntities(json: unknown, options: { anyClass?: boolean } = {}): TrackEntity[] {
   const entities = asRecord(asRecord(json)?.['entities'])
@@ -131,8 +140,6 @@ export function parseEntities(json: unknown, options: { anyClass?: boolean } = {
     if (!isRacetrack && !options.anyClass) continue
     const lonLat = coordinateOf(claims)
     if (!lonLat) continue
-    const length = chooseLengthM(claims, id)
-    if (length === undefined) continue
     const label = asRecord(asRecord(entity?.['labels'])?.['en'])?.['value']
     const description = asRecord(asRecord(entity?.['descriptions'])?.['en'])?.['value']
     tracks.push({
@@ -140,7 +147,7 @@ export function parseEntities(json: unknown, options: { anyClass?: boolean } = {
       label: typeof label === 'string' ? label : id,
       description: typeof description === 'string' ? description : '',
       lonLat,
-      lengthM: length,
+      lengthM: chooseLengthM(claims, id),
     })
   }
   return tracks

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildQuery, buildRegionHighwayQuery, candidateWays, isPitLane, parseWays } from './overpass'
+import { buildQuery, buildRegionHighwayQuery, buildWikidataRelationLookupQuery, candidateWays, isPitLane, parseRelationIds, parseWays } from './overpass'
 import type { OsmWay } from './overpass'
 import monza from './fixtures/overpass-monza.json'
 
@@ -56,6 +56,38 @@ describe('buildRegionHighwayQuery', () => {
   it('rejects an inverted bbox', () => {
     expect(() => buildRegionHighwayQuery([bbox[2], bbox[1], bbox[0], bbox[3]])).toThrow(/west < east/)
     expect(() => buildRegionHighwayQuery([bbox[0], bbox[3], bbox[2], bbox[1]])).toThrow(/south < north/)
+  })
+})
+
+describe('buildWikidataRelationLookupQuery', () => {
+  it('is global — no bbox, no around filter — and asks only for ids/tags, no geometry', () => {
+    const q = buildWikidataRelationLookupQuery('Q171400')
+    expect(q).toContain('relation["wikidata"="Q171400"]')
+    expect(q).not.toContain('(')
+    expect(q).toContain('out ids tags;')
+    expect(q).not.toContain('out skel qt')
+  })
+
+  it('refuses anything that is not a Wikidata id (it is interpolated into the query)', () => {
+    expect(() => buildWikidataRelationLookupQuery('Q1"];out;')).toThrow(/Wikidata id/)
+  })
+})
+
+describe('parseRelationIds', () => {
+  it('reads relation ids from an ids/tags response, ignoring any other element type', () => {
+    const json = {
+      elements: [
+        { type: 'relation', id: 148194, tags: { name: 'Circuit de Monaco' } },
+        { type: 'way', id: 999 },
+      ],
+    }
+    expect(parseRelationIds(json)).toEqual([148194])
+  })
+
+  it('tolerates an empty or malformed response', () => {
+    expect(parseRelationIds({ elements: [] })).toEqual([])
+    expect(parseRelationIds({})).toEqual([])
+    expect(parseRelationIds(null)).toEqual([])
   })
 })
 

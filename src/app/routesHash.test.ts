@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
-import { formatHash, parseHash } from './routesHash'
+import { formatCircuitHash, formatHash, parseCircuitHash, parseHash } from './routesHash'
 
 describe('routesHash', () => {
   it('formats and parses "#<circuit>/<region>/<rank>"', () => {
@@ -51,5 +51,27 @@ describe('routesHash', () => {
       region: 'no-such-region',
       rank: 1,
     })
+  })
+})
+
+describe('circuit-only hash', () => {
+  it('formats and parses "#<circuit>"', () => {
+    expect(formatCircuitHash({ circuitId: 'monza' })).toBe('#monza')
+    expect(parseCircuitHash('#monza')).toEqual({ circuitId: 'monza' })
+  })
+
+  it('also accepts the hash without its leading "#"', () => {
+    expect(parseCircuitHash('monza')).toEqual({ circuitId: 'monza' })
+  })
+
+  it.each([
+    ['empty', ''],
+    ['just a hash', '#'],
+    ['garbage', '#!!!'],
+    ['a full region/rank ref', '#hungaroring/espinho/2'],
+    ['trailing slash', '#hungaroring/'],
+    ['whitespace', '#hungaroring '],
+  ])('rejects %s', (_label, hash) => {
+    expect(parseCircuitHash(hash)).toBeNull()
   })
 })

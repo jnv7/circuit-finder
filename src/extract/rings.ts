@@ -14,7 +14,11 @@ import { pathLength, resample } from '../geometry/path'
 import type { Point } from '../geometry/types'
 import type { OsmWay } from './overpass'
 
-/** Endpoint gap tolerated between two ways that share no node id (reported when used). */
+/** Endpoint gap tolerated between two ways that share no node id (reported when used).
+ *  A dedicated racetrack's own `highway=raceway` way is normally one continuous
+ *  line (gap 0); a street circuit's lap, assembled from ordinary named streets
+ *  via its OSM route relation, can have real joints wider than this default —
+ *  `extract-circuit --stitch-tolerance-m` overrides it per run. */
 export const STITCH_FALLBACK_M = 5
 /** Cap on enumerated cycles; exceeding it is a loud failure, not a truncated search. */
 export const MAX_CYCLES = 5000
@@ -24,6 +28,13 @@ export const MAX_STEPS = 3_000_000
 export const PICK_TOLERANCE = 0.05
 /** The runner-up must be at least this much (as a length fraction) worse. */
 export const PICK_MARGIN = 0.03
+
+/** Thrown by `findRings` when the way graph has too many simple cycles to
+ *  enumerate (`MAX_CYCLES`) or search (`MAX_STEPS`) — almost always because an
+ *  alternate/short layout shares pavement with the main lap at several points,
+ *  not because the main lap itself is complex. `findJunctionOffenders` on the
+ *  same ways usually names the culprit directly. */
+export class TooManyCyclesError extends Error {}
 
 export type RingCandidate = {
   wayIds: number[]
@@ -130,14 +141,16 @@ function findBridges(segments: readonly Segment[], toleranceM: number): Array<[n
 }
 
 /**
- * Every simple cycle of the way graph, as candidate laps. Throws when the
- * graph is too tangled to enumerate within `maxCycles` cycles / `MAX_STEPS`
- * steps — the caller should tell the operator to pin ways with `--exclude-ways`.
+ * Every simple cycle of the way graph, as candidate laps. Throws
+ * `TooManyCyclesError` when the graph is too tangled to enumerate within
+ * `maxCycles` cycles / `MAX_STEPS` steps — the caller should run
+ * `findJunctionOffenders` on the same `ways` and tell the operator to pin
+ * the lap with `--exclude-ways`.
  */
-export function findRings(ways: readonly OsmWay[], maxCycles = MAX_CYCLES): RingCandidate[] {
+export function findRings(ways: readonly OsmWay[], maxCycles = MAX_CYCLES, stitchToleranceM = STITCH_FALLBACK_M): RingCandidate[] {
   const segments = buildSegments(ways)
   const joins = new Joins()
-  for (const [a, b] of findBridges(segments, STITCH_FALLBACK_M)) joins.union(a, b)
+  for (const [a, b] of findBridges(segments, stitchToleranceM)) joins.union(a, b)
   const inRelation = new Map(ways.map((w) => [w.id, w.inRelation]))
 
   const vertexIndex = new Map<number, number>()
@@ -156,7 +169,7 @@ export function findRings(ways: readonly OsmWay[], maxCycles = MAX_CYCLES): Ring
   const pushCycle = (start: number, edgeIds: number[]): void => {
     cycles.push({ start, edgeIds })
     if (cycles.length > maxCycles) {
-      throw new Error(
+      throw new TooManyCyclesError(
         `more than ${maxCycles} candidate laps: too many layouts overlap here — pin the lap with --exclude-ways`,
       )
     }
@@ -176,7 +189,7 @@ export function findRings(ways: readonly OsmWay[], maxCycles = MAX_CYCLES): Ring
   const walk = (at: number, start: number): void => {
     for (const { edge, other } of adjacency[at]!) {
       if (++steps > MAX_STEPS) {
-        throw new Error(`the way graph is too tangled to search (over ${MAX_STEPS} steps) — pin the lap with --exclude-ways`)
+        throw new TooManyCyclesError(`the way graph is too tangled to search (over ${MAX_STEPS} steps) — pin the lap with --exclude-ways`)
       }
       if (usedEdges.has(edge)) continue
       if (other === start) {
@@ -211,6 +224,44 @@ export function findRings(ways: readonly OsmWay[], maxCycles = MAX_CYCLES): Ring
   }
 
   return cycles.map((c) => toRing(c.start, c.edgeIds, edges, inRelation))
+}
+
+export type JunctionOffender = { wayId: number; name?: string; junctionCount: number }
+
+/**
+ * Diagnostic for a `TooManyCyclesError`: which ways are most responsible for
+ * the branching. A junction here is any node touched by `minWays` or more
+ * ways; a lap's own segments each touch only the one or two junctions linking
+ * them to their neighbours, but a separate layout sharing pavement with the
+ * main lap (a short/alternate circuit, a karting track, a paddock loop) tends
+ * to cross it repeatedly, so its way shows up in far more junctions than any
+ * genuine lap segment — real example: Circuit of the Americas' "COTA Short
+ * Track" way touches 26 of the 36 raceway-tagged ways' junctions, where every
+ * "Turn N" segment of the Grand Prix lap touches 2-4. Sorted worst first;
+ * empty when nothing stands out (every way touches at most `minWays - 1`
+ * junctions with others, i.e. the ways form a simple path/cycle already).
+ */
+export function findJunctionOffenders(ways: readonly OsmWay[], minWays = 3): JunctionOffender[] {
+  const nodeWays = new Map<number, Set<number>>()
+  for (const w of ways) {
+    for (const n of w.nodeIds) {
+      let set = nodeWays.get(n)
+      if (!set) {
+        set = new Set()
+        nodeWays.set(n, set)
+      }
+      set.add(w.id)
+    }
+  }
+  const junctionCount = new Map<number, number>()
+  for (const wset of nodeWays.values()) {
+    if (wset.size < minWays) continue
+    for (const id of wset) junctionCount.set(id, (junctionCount.get(id) ?? 0) + 1)
+  }
+  const byId = new Map(ways.map((w) => [w.id, w]))
+  return [...junctionCount.entries()]
+    .map(([wayId, count]) => ({ wayId, name: byId.get(wayId)?.tags['name'], junctionCount: count }))
+    .sort((a, b) => b.junctionCount - a.junctionCount)
 }
 
 /** Assemble a cycle's edges into one open ring of points. */

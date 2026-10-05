@@ -1,6 +1,9 @@
 # Spec — Phase 24: `find-route` — from a circuit's name to a stored Porto route
 
-Status: `done` (implemented 2026-09-28 — see *Outcome* at the end)
+Status: `done` (implemented 2026-09-28 — see *Outcome* at the end; its CLI
+was split into `extract-circuit`/`generate-route` by
+[Phase 27](phase-27-split-extraction-and-search-cli.md), 2026-10-05 — the
+extraction logic itself, specified below, is unchanged)
 Depends on: [phase-22-route-generator.md](phase-22-route-generator.md) (the
 generator this command drives), [phase-1-geometry.md](phase-1-geometry.md)
 (`circuits.json`, projection)

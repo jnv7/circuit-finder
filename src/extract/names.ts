@@ -1,4 +1,5 @@
-// Circuit-name handling for `find-route` (Phase 24): normalise a name so
+// Circuit-name handling for `extract-circuit` (Phase 24, split from
+// `find-route` in Phase 27): normalise a name so
 // "Autódromo" and "autodromo" compare equal, match it against the bundled
 // circuits, and derive a stable id slug.
 import type { Circuit } from '../circuits'

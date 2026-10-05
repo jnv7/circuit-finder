@@ -26,7 +26,7 @@
 // These are now the *official* boundaries, but data hasn't caught up yet:
 // `src/data/regions/*.json` and every committed `src/data/routes/*.json`
 // still reflect the *previous* boundaries (Póvoa has no street file at all).
-// Running the generator/`find-route` without `--region` will fail loudly on
+// Running `generate-route` without `--region` will fail loudly on
 // Póvoa until its street data is fetched — deliberate (fail loudly beats a
 // silent wrong result), not yet fixed; re-fetching + regenerating against
 // these boundaries is a follow-up, not done in this pass.
