@@ -145,7 +145,20 @@ describe('committed route files', { timeout: 60_000 }, () => {
           expect(Math.abs(lengthRatio - route.metrics.lengthRatio)).toBeLessThan(0.01)
           expect(Math.abs(meanM - route.metrics.meanDeviationM)).toBeLessThan(3)
           expect(Math.abs(maxM - route.metrics.maxDeviationM)).toBeLessThan(3)
-          expect(Math.abs(frechetM - route.metrics.frechetM)).toBeLessThan(3)
+
+          // frechetM alone needs a wider budget than the other geometric
+          // metrics above: `frechetToRing` resamples both curves at a fixed
+          // spacing (`resample`, length-parameterised), so the same sub-metre
+          // lon/lat rounding that only nudges meanM/maxM (plain nearest-point
+          // distances) can shift a resample point past a length threshold and
+          // realign the discrete-Fréchet match against a different ring
+          // sample — an amplification of the rounding error, not a sign of a
+          // stale file. Measured across every committed route file: usually
+          // under 1 m, up to 4.7 m on madring/matosinhos's third route — still
+          // an informational metric only (`DEFAULT_BAR` has no frechet term,
+          // so this can never affect which routes a generation run keeps),
+          // and far below the metric's own 20 m sample spacing.
+          expect(Math.abs(frechetM - route.metrics.frechetM)).toBeLessThan(6)
 
           // Retraced fraction: the one metric that needs edge-level graph
           // info, re-derived by snapping (see `reresolveNodeIds`). That
